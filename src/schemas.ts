@@ -48,6 +48,21 @@ export const paymentClaimSchema = z.object({
   anchor: anchorSchema.optional()
 }).strict();
 
+export function holdingsSchema(lines: readonly string[]) {
+  return z.object({
+    rows: z.array(z.object({
+      line: z.enum([...lines] as [string, ...string[]]),
+      percent: z.int().min(0).max(100)
+    }).strict())
+  }).strict();
+}
+
+export function declaredBeneficialOwnerSchema(lines: readonly string[]) {
+  return z.object({
+    declared: z.enum([...lines, 'NINGUNO'] as unknown as [string, ...string[]])
+  }).strict();
+}
+
 export const plannerToolSchemas = {
   approve_submission: z.object({}).strict(),
   route_to_human: z.object({
