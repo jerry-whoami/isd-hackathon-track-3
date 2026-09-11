@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { generateAttack, MAX_INJECTION_LENGTH } from './attack-generator.ts';
 import path from 'node:path';
 
 import { loadCorpus } from './corpus.ts';
@@ -7,7 +8,7 @@ import { paragraphChunks } from './ingest.ts';
 import { ScriptedModelAdapter } from './model-port.ts';
 import { runDuel, type DuelRecord } from './duel.ts';
 import { review, type ReviewRecord } from './review.ts';
-import type { DocumentType } from './schemas.ts';
+import { attackPositionForDocument, attackPositionSchema, type AttackPosition, type DocumentType } from './schemas.ts';
 
 type SampleDocument = {
   id: string;
@@ -18,6 +19,7 @@ type SampleDocument = {
   pdf: string;
   text: string;
   injection?: string;
+  attack?: { position: AttackPosition; text: string };
 };
 
 type Job = { polls: number; record?: ReviewRecord };
@@ -44,17 +46,22 @@ const samples: SampleDocument[] = [
     pdf: 'documents/onboarding/carta-limpia.pdf', text: 'documents/onboarding/carta-limpia.txt'
   }
 ];
+const generatedAttacks: SampleDocument[] = [];
 const jobs = new Map<string, Job>();
 const duelJobs = new Map<string, DuelJob>();
 
+function allDocuments(): SampleDocument[] {
+  return [...samples, ...generatedAttacks];
+}
+
 function selectedSample(id: string | null): SampleDocument {
-  return samples.find((sample) => sample.id === id) ?? samples[0]!;
+  return allDocuments().find((sample) => sample.id === id) ?? samples[0]!;
 }
 
 async function recordedReview(sample: SampleDocument): Promise<ReviewRecord> {
   const extractedText = await readFile(path.join(root, sample.text), 'utf8');
   return review({
-    document: { id: sample.id, type: sample.type, extractedText },
+    document: { id: sample.id, type: sample.type, extractedText, ...(sample.attack === undefined ? {} : { attack: sample.attack }) },
     corpus: await loadCorpus(path.join(root, 'corpus')),
     model: new ScriptedModelAdapter(containedResponses(sample, extractedText))
   });
@@ -68,7 +75,7 @@ async function recordedDuel(sample: SampleDocument, runs: number, job: DuelJob):
   ]).flat();
   try {
     job.record = await runDuel({
-      document: { id: sample.id, type: sample.type, extractedText },
+      document: { id: sample.id, type: sample.type, extractedText, ...(sample.attack === undefined ? {} : { attack: sample.attack }) },
       corpus: await loadCorpus(path.join(root, 'corpus')),
       model: new ScriptedModelAdapter(responses),
       runs,
@@ -100,6 +107,10 @@ function containedResponses(sample: SampleDocument, extractedText: string): unkn
   return [
     ...coverage,
     { rows: [{ line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 }, { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }] },
+    { jurisdiction: 'NO_LISTADA' },
+    { jurisdiction: 'Islas Vírgenes Británicas (BVI, Tortola, Road Town, Islas Virgenes Britanicas)' },
+    { jurisdiction: 'NO_LISTADA' },
+    { jurisdiction: 'NO_LISTADA' },
     { declared: '[L3]' },
     { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'La estructura requiere revisión humana.' } }] }
   ];
@@ -144,7 +155,7 @@ function page(sample: SampleDocument, step: string, duelStarted = false, duelRun
 <header class="topbar"><a class="wordmark" href="${queryPath(sample, 'documento')}">FARADAY</a><p>Revisión contenida de documentos hostiles</p><button class="containment" type="button" aria-expanded="false" aria-controls="proofs" onclick="toggleProofs(this)">Reader: red ninguna · 100 % local · QVAC Qwen3-8B</button></header>
 <aside class="proofs" id="proofs" hidden><div><strong>Pruebas de contención</strong><p>Fuera de Compose no hay pruebas activas para mostrar. Inicie el stack en Compose para ver los intentos DNS y HTTP fallidos, <code>network_mode: none</code> y el rechazo grammar+tools (50010).</p></div></aside>
 <div class="shell">
-<aside class="bandeja"><h2>Bandeja</h2><p class="label">Muestras fijadas · sin cargas</p><nav aria-label="Documentos">${samples.map((item) => `<a class="document-choice ${item.id === sample.id ? 'active' : ''}" href="${queryPath(item, 'documento')}"><span>${escapeHtml(item.shortTitle)}</span><small>${escapeHtml(item.typeLabel)}</small></a>`).join('')}</nav><form action="/reset" method="post"><button class="text-button" type="submit">↺ Reiniciar</button></form></aside>
+<aside class="bandeja"><h2>Bandeja</h2><p class="label">Muestras fijadas · sin cargas</p><nav aria-label="Documentos">${allDocuments().map((item) => `<a class="document-choice ${item.id === sample.id ? 'active' : ''}" href="${queryPath(item, 'documento')}"><span>${escapeHtml(item.shortTitle)}</span><small>${escapeHtml(item.typeLabel)}</small></a>`).join('')}</nav><form action="/reset" method="post"><button class="text-button" type="submit">↺ Reiniciar</button></form></aside>
 <main>
 <nav class="steps" aria-label="Pasos"><a class="${step === 'documento' ? 'active' : ''}" href="${queryPath(sample, 'documento')}">① Documento</a><a class="${step === 'expediente' ? 'active' : ''}" href="${queryPath(sample, 'expediente')}">② Expediente</a><a class="${step === 'duelo' ? 'active' : ''}" href="${queryPath(sample, 'duelo')}">③ Duelo</a></nav>
 ${main}
@@ -162,7 +173,7 @@ function duelStartView(sample: SampleDocument): string {
 function documentView(sample: SampleDocument): string {
   return `<section class="document-heading"><div><h1>${escapeHtml(sample.title)}</h1><p>${escapeHtml(sample.typeLabel)} · tipo preestablecido por la bandeja</p></div><a class="button" href="${queryPath(sample, 'expediente')}">Abrir expediente</a></section>
 <section class="document-grid"><article class="pdf-panel"><h2>Lo que ve una persona</h2><iframe src="/${sample.pdf}" title="PDF de ${escapeHtml(sample.title)}"></iframe></article><article class="extract-panel"><h2>Lo que lee la máquina</h2><pre>${highlightInjection(sample)}</pre></article></section>
-<section class="injection-panel ${sample.injection ? 'hostile' : ''}"><h2>Instrucción embebida</h2>${sample.injection ? `<textarea readonly aria-label="Instrucción embebida">${escapeHtml(sample.injection)}</textarea><p>Visible para el Reader como contenido documental. No es una instrucción operativa.</p>` : '<p>Documento limpio: no contiene una instrucción oculta.</p>'}</section>`;
+<section class="injection-panel ${sample.injection ? 'hostile' : ''}"><h2>Instrucción embebida</h2>${sample.injection ? `<textarea readonly aria-label="Instrucción embebida">${escapeHtml(sample.injection)}</textarea><p>Visible para el Reader como contenido documental. No es una instrucción operativa.</p>` : `<form action="/attacks?doc=${encodeURIComponent(sample.id)}" method="post"><label for="injection">Escribe tu instrucción oculta</label><textarea id="injection" name="injection" maxlength="${MAX_INJECTION_LENGTH}" required aria-label="Instrucción embebida"></textarea><p>Máximo ${MAX_INJECTION_LENGTH} caracteres.</p><label for="position">Posición</label><select id="position" name="position"><option value="${attackPositionForDocument(sample.type)}">${sample.type === 'propuesta' ? 'Después de la cláusula de pago' : 'Al pie del Anexo A'}</option></select><button class="button" type="submit">Generar</button></form>`}</section>`;
 }
 
 function duelView(sample: SampleDocument, job: DuelJob, runs: number): string {
@@ -244,6 +255,12 @@ async function cacheTexts(): Promise<void> {
   await Promise.all(samples.map(async (sample) => readTextCache.set(sample.id, await readFile(path.join(root, sample.text), 'utf8'))));
 }
 
+async function formBody(request: import('node:http').IncomingMessage): Promise<URLSearchParams> {
+  let body = '';
+  for await (const chunk of request) body += chunk;
+  return new URLSearchParams(body);
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', 'http://localhost');
   const sample = selectedSample(url.searchParams.get('doc'));
@@ -251,8 +268,44 @@ const server = createServer(async (request, response) => {
   if (request.method === 'POST' && url.pathname === '/reset') {
     jobs.clear();
     duelJobs.clear();
+    generatedAttacks.splice(0);
     response.writeHead(303, { location: '/' });
     response.end();
+    return;
+  }
+  if (request.method === 'POST' && url.pathname === '/attacks') {
+    if (sample.injection) { response.writeHead(400); response.end('Seleccione un documento limpio.'); return; }
+    const form = await formBody(request);
+    const injection = form.get('injection');
+    const position = attackPositionSchema.safeParse(form.get('position'));
+    if (!position.success || !injection) { response.writeHead(400); response.end('Ataque inválido.'); return; }
+    try {
+      const attack = await generateAttack({
+        documentType: sample.type,
+        attackNumber: generatedAttacks.length + 1,
+        injection,
+        position: position.data,
+        outputDirectory: path.join(root, 'jobs', 'attacks')
+      });
+      const generated: SampleDocument = {
+        id: attack.id,
+        title: attack.title,
+        shortTitle: attack.title,
+        type: sample.type,
+        typeLabel: sample.typeLabel,
+        pdf: path.relative(root, attack.pdfPath),
+        text: path.relative(root, attack.textPath),
+        injection,
+        attack: { position: attack.position, text: injection }
+      };
+      generatedAttacks.push(generated);
+      readTextCache.set(generated.id, await readFile(attack.textPath, 'utf8'));
+      response.writeHead(303, { location: queryPath(generated, 'documento') });
+      response.end();
+    } catch (error) {
+      response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end(error instanceof Error ? error.message : 'Ataque inválido.');
+    }
     return;
   }
   if (url.pathname === '/duel') {
@@ -279,9 +332,11 @@ const server = createServer(async (request, response) => {
     response.end(job.record ? reviewView(job.record, sample) : `<div class="progress"><span></span><p>Reader: clasificando fragmentos con gramática y sin herramientas…</p></div>`);
     return;
   }
-  if (url.pathname.startsWith('/documents/')) {
+  if (url.pathname.startsWith('/documents/') || url.pathname.startsWith('/jobs/attacks/')) {
     const file = path.join(root, url.pathname.slice(1));
-    if (!file.startsWith(path.join(root, 'documents'))) { response.writeHead(403); response.end(); return; }
+    const documentsDirectory = path.join(root, 'documents');
+    const attacksDirectory = path.join(root, 'jobs', 'attacks');
+    if (!file.startsWith(documentsDirectory) && !file.startsWith(attacksDirectory)) { response.writeHead(403); response.end(); return; }
     try {
       const content = await readFile(file);
       response.writeHead(200, { 'content-type': file.endsWith('.pdf') ? 'application/pdf' : 'text/plain; charset=utf-8' });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const documentTypeSchema = z.enum(['propuesta', 'carta_origen_fondos']);
+export const attackPositionSchema = z.enum(['after_payment_clause', 'foot_of_anexo_a']);
 export const topicSchema = z.enum(['PAYMENT_TERMS', 'LIABILITY', 'DECLARED_BO', 'JURISDICTIONS']);
 export const primitiveSchema = z.enum([
   'structural',
@@ -96,6 +97,11 @@ export const plannerToolSchemas = {
 } as const;
 
 export type DocumentType = z.infer<typeof documentTypeSchema>;
+export type AttackPosition = z.infer<typeof attackPositionSchema>;
+
+export function attackPositionForDocument(type: DocumentType): AttackPosition {
+  return type === 'propuesta' ? 'after_payment_clause' : 'foot_of_anexo_a';
+}
 export type PolicySection = z.infer<typeof policySectionSchema>;
 export type PolicyCorpus = z.infer<typeof policyCorpusSchema>;
 export type Topic = z.infer<typeof topicSchema>;
