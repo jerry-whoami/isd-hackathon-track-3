@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 const port = 3197;
@@ -26,16 +28,84 @@ test('the selected workflow tab highlight stays inside the tab', async () => {
 });
 
 test('the expediente remains openable and exposes policy documents', async () => {
+  const uploadDirectory = await mkdtemp(path.join(tmpdir(), 'faraday-web-'));
   const server = spawn(process.execPath, ['--import', 'tsx', 'src/web.ts'], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, PORT: String(port), FARADAY_UPLOADS_DIR: uploadDirectory },
     stdio: 'ignore'
   });
 
   try {
     await waitForServer();
 
-    const page = await (await fetch(`${baseUrl}/?doc=propuesta-hostil&step=expediente`)).text();
+    const sessionResponse = await fetch(`${baseUrl}/`);
+    const cookie = sessionResponse.headers.get('set-cookie')?.split(';')[0];
+    assert.ok(cookie);
+    const upload = new FormData();
+    upload.set('type', 'propuesta');
+    upload.set('document', new Blob([Uint8Array.from(await readFile('documents/procurement/propuesta-limpia.pdf'))], { type: 'application/pdf' }), 'expediente-cliente.pdf');
+    const uploadResponse = await fetch(`${baseUrl}/uploads`, {
+      method: 'POST',
+      headers: { cookie },
+      body: upload,
+      redirect: 'manual'
+    });
+    assert.equal(uploadResponse.status, 303);
+    const uploadedLocation = uploadResponse.headers.get('location');
+    assert.ok(uploadedLocation);
+    const uploadedId = new URL(uploadedLocation, baseUrl).searchParams.get('doc');
+    assert.ok(uploadedId);
+
+    const inbox = await (await fetch(`${baseUrl}/`, { headers: { cookie } })).text();
+    assert.match(inbox, /expediente-cliente/);
+    assert.match(inbox, new RegExp(`action="/uploads/${uploadedId}/delete"`));
+    assert.doesNotMatch(inbox, /action="\/uploads\/propuesta-hostil\/delete"/);
+    const uploadedPdf = await fetch(`${baseUrl}/uploads/${uploadedId}.pdf`, { headers: { cookie } });
+    assert.equal(uploadedPdf.status, 200);
+    assert.equal(uploadedPdf.headers.get('content-type'), 'application/pdf');
+    const uploadedPage = await (await fetch(new URL(uploadedLocation, baseUrl), { headers: { cookie } })).text();
+    assert.match(uploadedPage, new RegExp(`iframe src="/uploads/${uploadedId}\\.pdf"`));
+    assert.match(uploadedPage, /treinta \(30\) días/);
+
+    const otherSessionResponse = await fetch(`${baseUrl}/`);
+    const otherCookie = otherSessionResponse.headers.get('set-cookie')?.split(';')[0];
+    assert.ok(otherCookie);
+    assert.doesNotMatch(await otherSessionResponse.text(), /expediente-cliente/);
+    assert.equal((await fetch(`${baseUrl}/uploads/${uploadedId}.pdf`, { headers: { cookie: otherCookie } })).status, 404);
+
+    const oversizedUpload = new FormData();
+    oversizedUpload.set('type', 'propuesta');
+    oversizedUpload.set('document', new Blob([new Uint8Array(10 * 1024 * 1024 + 1)], { type: 'application/pdf' }), 'demasiado-grande.pdf');
+    const oversizedResponse = await fetch(`${baseUrl}/uploads`, { method: 'POST', headers: { cookie }, body: oversizedUpload });
+    assert.equal(oversizedResponse.status, 400);
+    assert.match(await oversizedResponse.text(), /10 MB/);
+
+    const invalidUpload = new FormData();
+    invalidUpload.set('type', 'propuesta');
+    invalidUpload.set('document', new Blob(['not a PDF'], { type: 'text/plain' }), 'notas.txt');
+    const invalidResponse = await fetch(`${baseUrl}/uploads`, { method: 'POST', headers: { cookie }, body: invalidUpload });
+    assert.equal(invalidResponse.status, 400);
+    assert.match(await invalidResponse.text(), /Solo se permiten archivos PDF/);
+
+    const protectedDelete = await fetch(`${baseUrl}/uploads/propuesta-hostil/delete`, {
+      method: 'POST',
+      headers: { cookie },
+      redirect: 'manual'
+    });
+    assert.equal(protectedDelete.status, 404);
+
+    const deleteResponse = await fetch(`${baseUrl}/uploads/${uploadedId}/delete`, {
+      method: 'POST',
+      headers: { cookie },
+      redirect: 'manual'
+    });
+    assert.equal(deleteResponse.status, 303);
+    const afterDelete = await (await fetch(`${baseUrl}/`, { headers: { cookie } })).text();
+    assert.doesNotMatch(afterDelete, /expediente-cliente/);
+    assert.match(afterDelete, /Propuesta hostil/);
+    assert.equal((await fetch(`${baseUrl}/uploads/${uploadedId}.pdf`, { headers: { cookie } })).status, 404);
+
+    const page = await (await fetch(`${baseUrl}/?doc=propuesta-hostil&step=expediente`, { headers: { cookie } })).text();
     assert.match(page, /class="skip-link" href="#workspace"/);
     assert.match(page, /<main id="workspace" tabindex="-1">/);
     assert.match(page, /class="stepbar"/);
@@ -89,5 +159,6 @@ test('the expediente remains openable and exposes policy documents', async () =>
     assert.match(invalidStep, /aria-current="step"[^>]*><span>1<\/span>Documento/);
   } finally {
     server.kill('SIGTERM');
+    await rm(uploadDirectory, { recursive: true, force: true });
   }
 });

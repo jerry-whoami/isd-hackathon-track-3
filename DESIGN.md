@@ -185,6 +185,8 @@ Small filled squares act as calibrated location marks, while CSS-drawn chevrons 
 - Active workflow steps use a cobalt field and a numbered square.
 - Previous and next controls stay at the top-right on desktop and remain grouped at the right edge below the step row on mobile.
 - The specimen tray uses numbered dark rows with a mineral-paper active state.
+- Its upload control accepts one session-scoped PDF with an explicit document type.
+- Delete controls appear only on uploaded rows; supplied samples remain immutable.
 
 ### Evidence Locator
 - Findings are semantic buttons with pressed state.

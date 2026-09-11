@@ -23,12 +23,14 @@ The Reader can read untrusted text but has no capabilities, while the Planner ha
 ## Operating Context
 
 The Spanish-language one-page interface demonstrates resident-agent onboarding and public procurement with four supplied PDFs.
+Reviewers may also add PDFs to their browser session and explicitly assign each document type.
 A judge evaluates the containment proof, document extraction, review record and trace in a short recorded demonstration.
 
 ## Capabilities and Constraints
 
 All inference is local through QVAC.
-The interface has no document upload and uses the document type preset by the supplied bandeja item.
+The four supplied documents are immutable.
+A reviewer may upload PDFs up to 10 MB for the current browser session, choose their document type, and delete only those uploads.
 The Reader emits typed claims with anchors, and the Validator issues findings and verification statuses.
 The Planner receives typed records and IDs only.
 

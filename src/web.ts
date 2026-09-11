@@ -1,7 +1,11 @@
+import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { generateAttack, MAX_INJECTION_LENGTH } from './attack-generator.ts';
 import path from 'node:path';
+import { promisify } from 'node:util';
+
+import { generateAttack, MAX_INJECTION_LENGTH } from './attack-generator.ts';
 
 import { loadCorpus } from './corpus.ts';
 import { paragraphChunks } from './ingest.ts';
@@ -9,7 +13,7 @@ import { FileDropModelAdapter } from './file-drop.ts';
 import { ScriptedModelAdapter, type ModelPort } from './model-port.ts';
 import { runDuel, type DuelRecord } from './duel.ts';
 import { review, type ReviewRecord } from './review.ts';
-import { attackPositionForDocument, attackPositionSchema, type AttackPosition, type DocumentType } from './schemas.ts';
+import { attackPositionForDocument, attackPositionSchema, documentTypeSchema, type AttackPosition, type DocumentType } from './schemas.ts';
 
 type SampleDocument = {
   id: string;
@@ -21,8 +25,12 @@ type SampleDocument = {
   text: string;
   injection?: string;
   attack?: { position: AttackPosition; text: string };
+  uploaded?: true;
+  pdfFile?: string;
+  textFile?: string;
 };
 
+type BrowserSession = { id: string; uploads: SampleDocument[] };
 type Job = { polls: number; record?: ReviewRecord };
 type DuelJob = { record?: DuelRecord; error?: string };
 type PolicyDocument = {
@@ -35,6 +43,10 @@ type PolicyDocument = {
 };
 
 const root = process.cwd();
+const execFileAsync = promisify(execFile);
+const uploadDirectory = process.env.FARADAY_UPLOADS_DIR ?? path.join(process.env.FARADAY_JOBS_DIR ?? path.join(root, 'jobs'), 'uploads');
+const maxUploadBytes = 10 * 1024 * 1024;
+const sessionCookie = 'faraday_session';
 const policyDocuments: PolicyDocument[] = [
   {
     id: 'pliego',
@@ -74,15 +86,30 @@ const samples: SampleDocument[] = [
   }
 ];
 const generatedAttacks: SampleDocument[] = [];
+const browserSessions = new Map<string, BrowserSession>();
 const jobs = new Map<string, Job>();
 const duelJobs = new Map<string, DuelJob>();
 
-function allDocuments(): SampleDocument[] {
-  return [...samples, ...generatedAttacks];
+function allDocuments(uploads: SampleDocument[] = []): SampleDocument[] {
+  return [...samples, ...generatedAttacks, ...uploads];
 }
 
-function selectedSample(id: string | null): SampleDocument {
-  return allDocuments().find((sample) => sample.id === id) ?? samples[0]!;
+function selectedSample(id: string | null, uploads: SampleDocument[] = []): SampleDocument {
+  return allDocuments(uploads).find((sample) => sample.id === id) ?? samples[0]!;
+}
+
+function browserSession(cookieHeader: string | undefined): { session: BrowserSession; created: boolean } {
+  const cookies = new Map((cookieHeader ?? '').split(';').map((part) => part.trim().split('=', 2) as [string, string]));
+  const requestedId = cookies.get(sessionCookie);
+  const existing = requestedId ? browserSessions.get(requestedId) : undefined;
+  if (existing) return { session: existing, created: false };
+  const session = { id: randomUUID(), uploads: [] };
+  browserSessions.set(session.id, session);
+  return { session, created: true };
+}
+
+function sampleTextPath(sample: SampleDocument): string {
+  return sample.textFile ?? path.join(root, sample.text);
 }
 
 function containedModel(scriptedResponses: unknown[]): ModelPort {
@@ -92,7 +119,7 @@ function containedModel(scriptedResponses: unknown[]): ModelPort {
 }
 
 async function recordedReview(sample: SampleDocument): Promise<ReviewRecord> {
-  const extractedText = await readFile(path.join(root, sample.text), 'utf8');
+  const extractedText = await readFile(sampleTextPath(sample), 'utf8');
   return review({
     document: { id: sample.id, type: sample.type, extractedText, ...(sample.attack === undefined ? {} : { attack: sample.attack }) },
     corpus: policyCorpus,
@@ -101,7 +128,7 @@ async function recordedReview(sample: SampleDocument): Promise<ReviewRecord> {
 }
 
 async function recordedDuel(sample: SampleDocument, runs: number, job: DuelJob): Promise<void> {
-  const extractedText = await readFile(path.join(root, sample.text), 'utf8');
+  const extractedText = await readFile(sampleTextPath(sample), 'utf8');
   const passing = isPassingSample(sample);
   const responses = Array.from({ length: runs }, () => [
     ...containedResponses(sample, extractedText),
@@ -177,7 +204,7 @@ function queryPath(sample: SampleDocument, step: string): string {
   return `/?doc=${encodeURIComponent(sample.id)}&step=${encodeURIComponent(step)}`;
 }
 
-function page(sample: SampleDocument, step: string, proof: string, duelStarted = false, duelRuns = 10): string {
+function page(sample: SampleDocument, documents: SampleDocument[], step: string, proof: string, duelStarted = false, duelRuns = 10): string {
   const main = step === 'expediente'
     ? `<section class="review-slot" aria-busy="true" hx-get="/review?doc=${encodeURIComponent(sample.id)}" hx-trigger="load, every 900ms" hx-swap="outerHTML"><div class="progress" role="status" aria-live="polite"><span aria-hidden="true"></span><p>Preparando el expediente contenido…</p><small>Reader local · gramática estricta · sin herramientas</small></div></section>`
     : step === 'duelo'
@@ -200,7 +227,7 @@ function page(sample: SampleDocument, step: string, proof: string, duelStarted =
 <header class="topbar"><a class="wordmark" href="${queryPath(sample, 'documento')}" aria-label="Faraday, inicio"><span>F</span>FARADAY</a><p>Revisión contenida de documentos hostiles</p><button class="containment" type="button" aria-expanded="false" aria-controls="proofs" onclick="toggleProofs(this)"><span class="containment-state" aria-hidden="true"></span><span>Reader aislado</span><small>sin red · local · QVAC ${escapeHtml(path.basename(process.env.FARADAY_MODEL ?? 'Qwen3-8B', '.gguf'))}</small></button></header>
 <aside class="proofs" id="proofs" hidden><div><strong>Pruebas de contención</strong><p>${proof}</p></div></aside>
 <div class="shell">
-<aside class="bandeja"><div class="bandeja-heading"><h2>Bandeja</h2><span>${String(allDocuments().length).padStart(2, '0')}</span></div><p class="label">Muestras fijadas · sin cargas</p><nav aria-label="Documentos">${allDocuments().map((item, index) => `<a class="document-choice ${item.id === sample.id ? 'active' : ''}" href="${queryPath(item, 'documento')}"${item.id === sample.id ? ' aria-current="page"' : ''}><b>${String(index + 1).padStart(2, '0')}</b><span>${escapeHtml(item.shortTitle)}</span><small>${escapeHtml(item.typeLabel)}</small></a>`).join('')}</nav><form action="/reset" method="post"><button class="text-button" type="submit">Reiniciar sesión</button></form><p class="bandeja-foot">Corpus fijo<br>Tipología preestablecida</p></aside>
+<aside class="bandeja"><div class="bandeja-heading"><h2>Bandeja</h2><span>${String(documents.length).padStart(2, '0')}</span></div><p class="label">Muestras y documentos de sesión</p><nav aria-label="Documentos">${documents.map((item, index) => `<div class="document-item"><a class="document-choice ${item.id === sample.id ? 'active' : ''}" href="${queryPath(item, 'documento')}"${item.id === sample.id ? ' aria-current="page"' : ''}><b>${String(index + 1).padStart(2, '0')}</b><span>${escapeHtml(item.shortTitle)}</span><small>${escapeHtml(item.typeLabel)}</small></a>${item.uploaded ? `<form action="/uploads/${encodeURIComponent(item.id)}/delete" method="post"><button class="delete-document" type="submit" aria-label="Eliminar ${escapeHtml(item.shortTitle)}">Eliminar</button></form>` : ''}</div>`).join('')}</nav><form class="upload-form" action="/uploads" method="post" enctype="multipart/form-data"><span class="upload-caption">Añadir PDF</span><input class="sr-only" id="upload-document" name="document" type="file" accept="application/pdf,.pdf" required onchange="showUploadName(this)"><label class="file-picker" for="upload-document"><span>Seleccionar PDF</span><small id="upload-file-name">Ningún archivo seleccionado</small></label><label for="upload-type">Tipo de documento</label><select id="upload-type" name="type" required><option value="propuesta">Propuesta</option><option value="carta_origen_fondos">Carta de origen de fondos</option></select><button class="text-button" type="submit">Subir documento</button><small>PDF · máximo 10 MB · solo esta sesión</small></form><form action="/reset" method="post"><button class="text-button" type="submit">Reiniciar revisión</button></form><p class="bandeja-foot">Corpus fijo<br>Tipo elegido por el usuario</p></aside>
 <main id="workspace" tabindex="-1">
 <div class="stepbar"><nav class="steps" aria-label="Pasos"><a class="${step === 'documento' ? 'active' : ''}" href="${queryPath(sample, 'documento')}"${step === 'documento' ? ' aria-current="step"' : ''}><span>1</span>Documento</a><a class="${step === 'expediente' ? 'active' : ''}" href="${queryPath(sample, 'expediente')}"${step === 'expediente' ? ' aria-current="step"' : ''}><span>2</span>Expediente</a><a class="${step === 'duelo' ? 'active' : ''}" href="${queryPath(sample, 'duelo')}"${step === 'duelo' ? ' aria-current="step"' : ''}><span>3</span>Duelo</a></nav><nav class="pager" aria-label="Navegación entre pasos">${step === 'documento' ? '' : `<a class="previous" href="${queryPath(sample, step === 'expediente' ? 'documento' : 'expediente')}">Anterior</a>`}${step === 'duelo' ? '' : `<a class="next" href="${queryPath(sample, step === 'documento' ? 'expediente' : 'duelo')}">Siguiente</a>`}</nav></div>
 ${main}
@@ -208,6 +235,7 @@ ${main}
 </div>
 <script>
 function toggleProofs(button) { const proofs = document.getElementById('proofs'); const open = proofs.hidden; proofs.hidden = !open; button.setAttribute('aria-expanded', String(open)); }
+function showUploadName(input) { const name = document.getElementById('upload-file-name'); if (name) name.textContent = input.files?.[0]?.name || 'Ningún archivo seleccionado'; }
 function reportHxError(element) {
   element.classList.add('hx-error');
   const status = document.getElementById('ui-status');
@@ -403,10 +431,110 @@ async function formBody(request: import('node:http').IncomingMessage): Promise<U
   return new URLSearchParams(body);
 }
 
+async function multipartForm(request: import('node:http').IncomingMessage): Promise<FormData> {
+  const contentType = request.headers['content-type'];
+  if (!contentType?.startsWith('multipart/form-data;')) throw new Error('El formulario de carga no es válido.');
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > maxUploadBytes + 64 * 1024) throw new Error('El PDF supera el límite de 10 MB.');
+    chunks.push(buffer);
+  }
+  return new Request('http://localhost/uploads', {
+    method: 'POST',
+    headers: { 'content-type': contentType },
+    body: new Uint8Array(Buffer.concat(chunks))
+  }).formData();
+}
+
+async function uploadedDocument(request: import('node:http').IncomingMessage, session: BrowserSession): Promise<SampleDocument> {
+  const form = await multipartForm(request);
+  const type = documentTypeSchema.safeParse(form.get('type'));
+  const file = form.get('document');
+  if (!type.success || !(file instanceof Blob) || !('name' in file) || typeof file.name !== 'string') {
+    throw new Error('Seleccione un PDF y su tipo de documento.');
+  }
+  if (!file.name.toLowerCase().endsWith('.pdf')) throw new Error('Solo se permiten archivos PDF.');
+  if (file.size === 0 || file.size > maxUploadBytes) throw new Error('El PDF debe pesar entre 1 byte y 10 MB.');
+
+  const content = Buffer.from(await file.arrayBuffer());
+  if (content.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El archivo no contiene un PDF válido.');
+  const id = `upload-${randomUUID()}`;
+  const directory = path.join(uploadDirectory, session.id, id);
+  const pdfFile = path.join(directory, 'document.pdf');
+  const textFile = path.join(directory, 'document.txt');
+  try {
+    await mkdir(directory, { recursive: true });
+    await writeFile(pdfFile, content);
+    await execFileAsync('pdftotext', ['-layout', pdfFile, textFile]);
+    const extractedText = await readFile(textFile, 'utf8');
+    if (extractedText.trim().length === 0) throw new Error('El PDF no contiene texto extraíble.');
+    const title = path.basename(file.name, path.extname(file.name)).trim().slice(0, 100) || 'Documento sin título';
+    const document: SampleDocument = {
+      id,
+      title,
+      shortTitle: title,
+      type: type.data,
+      typeLabel: type.data === 'propuesta' ? 'Propuesta subida' : 'Carta de origen de fondos subida',
+      pdf: `uploads/${id}.pdf`,
+      text: '',
+      uploaded: true,
+      pdfFile,
+      textFile
+    };
+    session.uploads.push(document);
+    readTextCache.set(id, extractedText);
+    return document;
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', 'http://localhost');
-  const sample = selectedSample(url.searchParams.get('doc'));
+  const browser = browserSession(request.headers.cookie);
+  if (browser.created) response.setHeader('set-cookie', `${sessionCookie}=${browser.session.id}; Path=/; HttpOnly; SameSite=Lax`);
+  const documents = allDocuments(browser.session.uploads);
+  const sample = selectedSample(url.searchParams.get('doc'), browser.session.uploads);
   if (url.pathname === '/' && url.searchParams.has('rerun')) jobs.delete(sample.id);
+  if (request.method === 'POST' && url.pathname === '/uploads') {
+    try {
+      const document = await uploadedDocument(request, browser.session);
+      response.writeHead(303, { location: queryPath(document, 'documento') });
+      response.end();
+    } catch (error) {
+      response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end(error instanceof Error ? error.message : 'No se pudo subir el PDF.');
+    }
+    return;
+  }
+  const deleteUploadMatch = url.pathname.match(/^\/uploads\/([^/]+)\/delete$/);
+  if (request.method === 'POST' && deleteUploadMatch) {
+    const index = browser.session.uploads.findIndex((candidate) => candidate.id === deleteUploadMatch[1]);
+    const document = browser.session.uploads[index];
+    if (index < 0 || !document?.pdfFile) { response.writeHead(404); response.end(); return; }
+    browser.session.uploads.splice(index, 1);
+    jobs.delete(document.id);
+    for (const key of duelJobs.keys()) if (key.startsWith(`${document.id}:`)) duelJobs.delete(key);
+    readTextCache.delete(document.id);
+    await rm(path.dirname(document.pdfFile), { recursive: true, force: true });
+    response.writeHead(303, { location: '/' });
+    response.end();
+    return;
+  }
+  const uploadedPdfMatch = url.pathname.match(/^\/uploads\/(upload-[0-9a-f-]+)\.pdf$/);
+  if (request.method === 'GET' && uploadedPdfMatch) {
+    const document = browser.session.uploads.find((candidate) => candidate.id === uploadedPdfMatch[1]);
+    if (!document?.pdfFile) { response.writeHead(404); response.end(); return; }
+    try {
+      response.writeHead(200, { 'content-type': 'application/pdf', 'cache-control': 'private, no-store' });
+      response.end(await readFile(document.pdfFile));
+    } catch { response.writeHead(404); response.end(); }
+    return;
+  }
   if (request.method === 'POST' && url.pathname === '/reset') {
     jobs.clear();
     duelJobs.clear();
@@ -518,12 +646,14 @@ const server = createServer(async (request, response) => {
   const requestedStep = url.searchParams.get('step');
   const step = requestedStep === 'expediente' || requestedStep === 'duelo' ? requestedStep : 'documento';
   response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-  response.end(page(sample, step, await containmentProof(), step === 'duelo' && url.searchParams.has('start'), duelRuns(url.searchParams.get('runs'))));
+  response.end(page(sample, documents, step, await containmentProof(), step === 'duelo' && url.searchParams.has('start'), duelRuns(url.searchParams.get('runs'))));
 });
 
 const styles = await readFile(path.join(root, 'src/web.css'), 'utf8');
 
 await cacheTexts();
+await rm(uploadDirectory, { recursive: true, force: true });
+await mkdir(uploadDirectory, { recursive: true });
 const policyCorpus = await loadCorpus(path.join(root, 'corpus'));
 const port = Number(process.env.PORT ?? 3000);
 server.listen(port, () => console.log(`Faraday web UI at http://localhost:${port}`));
