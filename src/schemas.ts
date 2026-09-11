@@ -74,6 +74,16 @@ export function declaredBeneficialOwnerSchema(lines: readonly string[]) {
   }).strict();
 }
 
+export function jurisdictionLabel(entry: z.infer<typeof jurisdictionSchema>): string {
+  return `${entry.jurisdiction} (${entry.aliases.join(', ')})`;
+}
+
+export function jurisdictionClaimSchema(labels: readonly string[]) {
+  return z.object({
+    jurisdiction: z.enum([...labels, 'NO_LISTADA'] as unknown as [string, ...string[]])
+  }).strict();
+}
+
 export const plannerToolSchemas = {
   approve_submission: z.object({}).strict(),
   route_to_human: z.object({

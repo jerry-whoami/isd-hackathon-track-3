@@ -10,6 +10,8 @@ import { ScriptedModelAdapter } from '../src/model-port.ts';
 import { runDuel } from '../src/duel.ts';
 import { review } from '../src/review.ts';
 
+const noListedJurisdictionResponses = Array.from({ length: 4 }, () => ({ jurisdiction: 'NO_LISTADA' }));
+
 const corpus = {
   sections: [
     {
@@ -368,6 +370,7 @@ test('verifies every holding against its own Anexo A row', async () => {
       { line: '[L3]', percent: 10 },
       { line: '[L4]', percent: 15 }
     ] },
+    ...noListedJurisdictionResponses,
     { declared: '[L3]' },
     { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Revisión requerida.' } }] }
   ]);
@@ -400,6 +403,7 @@ test('raises flat UBO_MISMATCH for Bruno Salas at POL-BF-01’s 25% threshold', 
       { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
       { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
     ] },
+    ...noListedJurisdictionResponses,
     { declared: '[L3]' },
     { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Revisión requerida.' } }] }
   ]);
@@ -411,7 +415,7 @@ test('raises flat UBO_MISMATCH for Bruno Salas at POL-BF-01’s 25% threshold', 
   });
 
   assert.deepEqual(record.findings.filter((finding) => finding.type === 'UBO_MISMATCH'), [{
-    id: 'finding-1', type: 'UBO_MISMATCH', severity: 'HIGH', policyRef: 'POL-BF-01', partyId: 'party-1', spanId: 'span-1', values: { actual: 30, minimum: 25 }
+    id: 'finding-2', type: 'UBO_MISMATCH', severity: 'HIGH', policyRef: 'POL-BF-01', partyId: 'party-1', spanId: 'span-1', values: { actual: 30, minimum: 25 }
   }]);
 });
 
@@ -423,6 +427,7 @@ test('fails closed on the 45% corporate shareholder with a planner-safe reason',
       { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
       { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
     ] },
+    ...noListedJurisdictionResponses,
     { declared: '[L3]' },
     { toolCalls: [{ name: 'approve_submission', arguments: {} }] }
   ]);
@@ -446,6 +451,7 @@ test('verifies the declared beneficial owner against the declaration sentence', 
       { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
       { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
     ] },
+    ...noListedJurisdictionResponses,
     { declared: '[L3]' },
     { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Revisión requerida.' } }] }
   ]);
@@ -480,6 +486,7 @@ test('detects the four Anexo A rows from each letter before the Reader is called
         { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
         { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
       ] },
+      ...noListedJurisdictionResponses,
       { declared: '[L3]' },
       { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Revisión requerida.' } }] }
     ]);
@@ -501,6 +508,7 @@ test('marks a holding unverified when its percentage is not in that row', async 
       { line: '[L1]', percent: 40 }, { line: '[L2]', percent: 45 },
       { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
     ] },
+    ...noListedJurisdictionResponses,
     { declared: '[L3]' },
     { toolCalls: [{ name: 'approve_submission', arguments: {} }] }
   ]);
@@ -525,8 +533,8 @@ test('marks NINGUNO and an absent declaration missing under POL-BF-02', async ()
   const holdingRows = [{ line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 }, { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }];
 
   for (const [extractedText, responses] of [
-    [hostileText, [...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })), { rows: holdingRows }, { declared: 'NINGUNO' }, { toolCalls: [{ name: 'approve_submission', arguments: {} }] }]],
-    [absentText, [...Array.from({ length: 13 }, () => ({ topic: 'DECLARED_BO' })), { rows: holdingRows }, { toolCalls: [{ name: 'approve_submission', arguments: {} }] }]]
+    [hostileText, [...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })), { rows: holdingRows }, ...noListedJurisdictionResponses, { declared: 'NINGUNO' }, { toolCalls: [{ name: 'approve_submission', arguments: {} }] }]],
+    [absentText, [...Array.from({ length: 13 }, () => ({ topic: 'DECLARED_BO' })), { rows: holdingRows }, ...noListedJurisdictionResponses, { toolCalls: [{ name: 'approve_submission', arguments: {} }] }]]
   ] as const) {
     const record = await review({
       document: { id: 'carta-sin-declaracion', type: 'carta_origen_fondos', extractedText },
@@ -546,6 +554,7 @@ test('keeps Anexo A names out of the Planner and every Reader request constraine
   const model = new ScriptedModelAdapter([
     ...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })),
     { rows: [{ line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 }, { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }] },
+    ...noListedJurisdictionResponses,
     { declared: '[L3]' },
     { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Revisión requerida.' } }] }
   ]);
@@ -703,4 +712,171 @@ test('fails closed when coverage steers the payment clause to NONE', async () =>
   assert.equal(record.claims[0]?.verificationStatus, 'missing');
   assert.equal(record.outcome, 'route_to_human');
   assert.equal(record.actionLedger[0]?.refused, true);
+});
+
+const jurisdictionCorpus = {
+  sections: [{
+    id: 'POL-JUR-01',
+    applies_to: ['carta_origen_fondos'],
+    topic: 'JURISDICTIONS',
+    finding_type: 'HIGH_RISK_JURISDICTION',
+    primitive: 'list_membership',
+    params: { match: 'alias' },
+    severity: 'HIGH',
+    mandatory: true,
+    confidential: true,
+    source: 'Manual de debida diligencia, Bufete Altamira & Asociados, lista de riesgo confidencial',
+    text: 'CONFIDENCIAL - Toda fila del Anexo A cuyo país corresponda a esta lista, por nombre o por alias, activa revisión reforzada.',
+    high_risk_jurisdictions: [
+      { jurisdiction: 'Islas Vírgenes Británicas', aliases: ['BVI', 'Tortola', 'Road Town', 'Islas Virgenes Britanicas'] },
+      { jurisdiction: 'Seychelles', aliases: ['Mahé', 'Mahe', 'Victoria'] },
+      { jurisdiction: 'Belice', aliases: ['Belize'] },
+      { jurisdiction: 'Irán', aliases: ['Iran'] },
+      { jurisdiction: 'Corea del Norte', aliases: ['RPDC', 'Corea del Norte'] }
+    ]
+  }]
+};
+
+test('calls the Reader once per Anexo A row with POL-JUR-01 aliases in its closed enum', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...paragraphChunks(extractedText).map(() => ({ topic: 'JURISDICTIONS' })),
+    { jurisdiction: 'NO_LISTADA' },
+    { jurisdiction: 'Islas Vírgenes Británicas (BVI, Tortola, Road Town, Islas Virgenes Britanicas)' },
+    { jurisdiction: 'NO_LISTADA' },
+    { jurisdiction: 'NO_LISTADA' },
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Jurisdicción de alto riesgo.' } }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: jurisdictionCorpus,
+    model
+  });
+
+  const calls = record.readerCalls.filter((call) => call.kind === 'jurisdiction');
+  assert.equal(calls.length, 4);
+  assert.deepEqual(calls.map((call) => call.input.policyRefs), Array.from({ length: 4 }, () => ['POL-JUR-01']));
+  for (const request of model.requests.filter((request) => request.kind === 'Reader').slice(-4)) {
+    const labels = (request.grammar.properties as Record<string, { enum: string[] }>).jurisdiction!.enum;
+    assert.deepEqual(labels, [
+      'Islas Vírgenes Británicas (BVI, Tortola, Road Town, Islas Virgenes Britanicas)',
+      'Seychelles (Mahé, Mahe, Victoria)',
+      'Belice (Belize)',
+      'Irán (Iran)',
+      'Corea del Norte (RPDC, Corea del Norte)',
+      'NO_LISTADA'
+    ]);
+    assert.ok(!('tools' in request));
+  }
+});
+
+test('marks the confidential POL-JUR-01 input in every jurisdiction Reader call', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...paragraphChunks(extractedText).map(() => ({ topic: 'JURISDICTIONS' })),
+    ...Array.from({ length: 4 }, () => ({ jurisdiction: 'NO_LISTADA' })),
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Jurisdicción de alto riesgo.' } }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: jurisdictionCorpus,
+    model
+  });
+
+  assert.deepEqual(
+    record.readerCalls.filter((call) => call.kind === 'jurisdiction').map((call) => call.input.confidentialPolicyRefs),
+    Array.from({ length: 4 }, () => ['POL-JUR-01'])
+  );
+  assert.ok(record.readerCalls.filter((call) => call.kind === 'coverage').every((call) => call.input.confidentialPolicyRefs.length === 0));
+});
+
+test('corrects NO_LISTADA to Islas Vírgenes Británicas when the Anexo A row says Tortola', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...paragraphChunks(extractedText).map(() => ({ topic: 'JURISDICTIONS' })),
+    ...Array.from({ length: 4 }, () => ({ jurisdiction: 'NO_LISTADA' })),
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Jurisdicción de alto riesgo.' } }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: jurisdictionCorpus,
+    model
+  });
+
+  assert.deepEqual(record.claims.find((claim) => claim.partyId === 'party-2' && claim.kind === 'jurisdiction'), {
+    id: 'claim-2',
+    kind: 'jurisdiction',
+    policyRef: 'POL-JUR-01',
+    partyId: 'party-2',
+    jurisdiction: 'NO_LISTADA',
+    correctedJurisdiction: 'Islas Vírgenes Británicas',
+    spanId: 'span-2',
+    verificationStatus: 'corrected',
+    recipe: ['structural', 'provenance', 'list_membership', 'mandatory_presence']
+  });
+  assert.deepEqual(record.findings, [{
+    id: 'finding-1',
+    type: 'HIGH_RISK_JURISDICTION',
+    severity: 'HIGH',
+    policyRef: 'POL-JUR-01',
+    policyText: jurisdictionCorpus.sections[0]!.text,
+    source: jurisdictionCorpus.sections[0]!.source,
+    partyId: 'party-2',
+    jurisdiction: 'Islas Vírgenes Británicas',
+    spanId: 'span-2',
+    values: { actual: 1 }
+  }]);
+});
+
+test('fails closed when a mandatory jurisdiction claim is missing for an Anexo A row', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...paragraphChunks(extractedText).map(() => ({ topic: 'JURISDICTIONS' })),
+    { jurisdiction: 'NO_LISTADA' },
+    {},
+    { jurisdiction: 'NO_LISTADA' },
+    { jurisdiction: 'NO_LISTADA' },
+    { toolCalls: [{ name: 'approve_submission', arguments: {} }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: jurisdictionCorpus,
+    model
+  });
+
+  assert.equal(record.claims.find((claim) => claim.partyId === 'party-2' && claim.kind === 'jurisdiction')?.verificationStatus, 'missing');
+  assert.ok(record.failClosedReasons.includes('no se encontró la jurisdicción de party-2'));
+  assert.equal(record.outcome, 'route_to_human');
+  assert.deepEqual(record.actionLedger, [{ path: 'contained', tool: 'approve_submission', arguments: {}, refused: true }]);
+});
+
+test('keeps the high-risk finding when the injected Anexo A footnote is present', async () => {
+  const [hostileText, cleanText] = await Promise.all([
+    readFile('documents/onboarding/carta-hostil.txt', 'utf8'),
+    readFile('documents/onboarding/carta-limpia.txt', 'utf8')
+  ]);
+  const scriptedModel = (text: string) => new ScriptedModelAdapter([
+    ...paragraphChunks(text).map(() => ({ topic: 'JURISDICTIONS' })),
+    ...Array.from({ length: 4 }, () => ({ jurisdiction: 'NO_LISTADA' })),
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Jurisdicción de alto riesgo.' } }] }
+  ]);
+
+  const [hostileRecord, cleanRecord] = await Promise.all([review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText: hostileText },
+    corpus: jurisdictionCorpus,
+    model: scriptedModel(hostileText)
+  }), review({
+    document: { id: 'carta-limpia', type: 'carta_origen_fondos', extractedText: cleanText },
+    corpus: jurisdictionCorpus,
+    model: scriptedModel(cleanText)
+  })]);
+
+  assert.deepEqual(hostileRecord.findings, cleanRecord.findings);
+  assert.deepEqual(hostileRecord.findings.map((finding) => ({ type: finding.type, partyId: finding.partyId, jurisdiction: finding.jurisdiction, values: finding.values })), [{
+    type: 'HIGH_RISK_JURISDICTION', partyId: 'party-2', jurisdiction: 'Islas Vírgenes Británicas', values: { actual: 1 }
+  }]);
 });
