@@ -72,15 +72,17 @@ SPIKE     = $REPO/spike             (gitignored, read-only reference)
 1. **Frontier.** Take every ticket not yet merged or running whose blockers are all merged into `integration`.
 2. **Launch.** For each ticket N on the frontier:
    - run `git -C $REPO worktree add $TREES/ticket-N -b ticket/N integration`;
+   - once #2 is merged, seed the worktree's dependencies from the cache instead of a fresh 4.9 GB install: `cp -al $TREES/node_modules-cache $TREES/ticket-N/node_modules`, then `npm install`, which is a fast no-op unless the ticket adds a dependency;
    - start a worker with the brief in §5, filling in N and the base commit.
 3. **On completion.**
-   - Read the worker's report. **Check each acceptance criterion against the diff yourself**; do not trust the report alone.
-   - Run the gate in the worktree: `npm test`, `npm run typecheck`, `node scripts/check-extraction.mjs`.
-   - Merge into `integration` with `git merge --no-ff ticket/N`, and run the gate again there.
+   - Read the worker's report. **Check each acceptance criterion against the diff yourself**; do not trust the report alone. This check is the ticket's spec review; workers do not run a separate code review.
+   - Merge into `integration` with `git merge --no-ff ticket/N` and run the gate **there only**: `npm test`, `npm run typecheck`, `node scripts/check-extraction.mjs`. The worker already ran it in its worktree; do not repeat it.
    - Resolve conflicts **by intent**, reading both tickets. Parallel tickets extend the same shared modules (schemas, the `finding_type → recipe` table, the review record), so the right resolution is usually to keep both additions.
 4. **When the gate is red**, fix it or send the failure back to the worker. If a ticket fails twice, implement it yourself or cut its scope, and record that for the PR. Never stall the whole run on one ticket.
 5. **Record.** Append one line per event (launched, merged, failed, cut) to `$TREES/PROGRESS.md`. This file lives outside the repo.
 6. After a merge, remove that ticket's worktree (`git worktree remove`), keep its branch, and go back to step 1.
+   - For #2, first move its `node_modules` to `$TREES/node_modules-cache`.
+   - Whenever a merged ticket changes `package-lock.json`, refresh the cache by running `npm ci` in a fresh copy.
 
 **Resume after a restart or compaction**: rebuild state from `$TREES/PROGRESS.md`, `git branch --merged integration` and `git worktree list`, then continue the loop.
 
@@ -91,16 +93,17 @@ Before sending, expand `$REPO`, `$TREES`, `$SPIKE` and `$MODELS` to their absolu
 > You are implementing **ticket #N** of Faraday, in the worktree `$TREES/ticket-N` on branch `ticket/N`, created from `integration` at `<sha>`.
 >
 > 1. **Read** `gh issue view N`, the spec (`gh issue view 1`), `CONTEXT.md` and `docs/adr/`. For QVAC usage, read `$SPIKE/lib.mjs` and §7 of `docs/agents/orchestration.md`, which is in your worktree. Those files are outside git; do not copy them into the repo.
-> 2. **Build test-first in thin vertical slices**:
->    - write one failing test through the highest seam: the **review entry point** with the **scripted model adapter**, which records every request;
->    - make it pass, then repeat;
->    - test external behaviour, never internals;
->    - write module-level tests only where the ticket says so (the attack generator).
+> 2. **Build test-first, one acceptance criterion at a time.** The seams are already agreed in spec #1; do not re-negotiate them.
+>    - For each criterion, first write its tests through the highest seam: the **review entry point** with the **scripted model adapter**, which records every request. Implement until they pass, then move to the next criterion.
+>    - Take expected values from the documents and the spec (60 days, 20%, Bruno Salas 30%, Tortola → Islas Vírgenes Británicas). Never recompute them the way the code does.
+>    - Test external behaviour, never internals. Write module-level tests only where the ticket says so (the attack generator).
+>    - While working, run only the test file you are touching and the typecheck. Run the full suite once, at the end.
+>    - Do not refactor beyond what the ticket needs.
 > 3. **Meet every acceptance criterion, and add nothing beyond the ticket.** Reuse what already exists on `integration`, and extend shared modules (schemas, recipe table, review record) additively so merges stay easy.
 > 4. **Real-model runs**: only if an acceptance criterion requires one, and exactly one, under the GPU lock:
 >    `FARADAY_MODEL=$MODELS/Qwen3-8B-Q4_K_M.gguf flock /tmp/faraday-gpu.lock <command>`.
 >    Afterwards, confirm with `nvidia-smi` that no QVAC worker process you started is still holding VRAM, and kill only your own.
-> 5. **Before finishing**, run `npm test`, `npm run typecheck` and `node scripts/check-extraction.mjs`. Review your own diff against the ticket's criteria and the spec, checking three things in particular:
+> 5. **Before finishing**, run `npm test`, `npm run typecheck` and `node scripts/check-extraction.mjs`, and put a summary of their output in your report. Do **not** run a separate code-review pass: the orchestrator reviews your diff against the criteria at merge. Re-read your diff once, checking three things:
 >    - names come from `CONTEXT.md`;
 >    - no Planner request contains any document text;
 >    - Reader calls carry a grammar and never tools.
@@ -165,11 +168,12 @@ Before sending, expand `$REPO`, `$TREES`, `$SPIKE` and `$MODELS` to their absolu
 ## 8. Finish
 
 1. All of #2–#11 are merged into `integration` (or cut, with the reason written down), and the gate is green there.
-2. Push **only** the `integration` branch. Open a PR from `integration` to `main` whose body includes:
+2. Run **one spec review of the whole `integration` diff** against spec #1, in a single pass rather than per ticket. Look for missing requirements, scope creep, and implementations that look wrong, especially gaps *between* tickets. Fix anything that breaks an acceptance criterion or the invariant; list the rest in the PR.
+3. Push **only** the `integration` branch. Open a PR from `integration` to `main` whose body includes:
    - a summary of what was built;
    - for each ticket, the status of every acceptance criterion and its deviations;
    - the three real-model run results, with numbers;
    - what is still untested (the real model on the GPU under Compose, which is exercised in #12);
    - open items (#12 and anything cut);
    - the line `Closes #2, #3, #4, #5, #6, #7, #8, #9, #10, #11` (never #1 or #12).
-3. **Do not merge.** Give the user the PR URL.
+4. **Do not merge.** Give the user the PR URL.
