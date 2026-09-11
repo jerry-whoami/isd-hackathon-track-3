@@ -1,4 +1,5 @@
-import { jsonGrammar } from './schemas.ts';
+import { jsonGrammar, plannerTools } from './schemas.ts';
+import { FileDropModelAdapter } from './file-drop.ts';
 
 export type Message = { role: 'system' | 'user'; content: string };
 export type ToolDefinition = ReturnType<typeof import('./schemas.ts').plannerTools>[number];
@@ -57,16 +58,35 @@ export class QvacModelAdapter implements ModelPort {
 
   static async load(modelPath = process.env.FARADAY_MODEL ?? '/models/Qwen3-8B-Q4_K_M.gguf'): Promise<QvacModelAdapter> {
     const sdk = await import('@qvac/sdk') as unknown as QvacSdk;
+    const device = process.env.FARADAY_DEVICE;
     const modelId = await sdk.loadModel({
       modelSrc: modelPath,
       modelType: 'llamacpp-completion',
-      modelConfig: { ctx_size: 8192, tools: true }
+      modelConfig: { ctx_size: 8192, tools: true, ...(device ? { device } : {}) }
     });
     return new QvacModelAdapter(sdk, modelId);
   }
 
   async close(): Promise<void> {
     await this.sdk.unloadModel({ modelId: this.modelId, clearStorage: false });
+  }
+
+  async proveGrammarAndToolsRejected(): Promise<number> {
+    try {
+      const run = this.sdk.completion({
+        modelId: this.modelId,
+        history: [{ role: 'user', content: 'Prueba de contención.' }],
+        stream: true,
+        responseFormat: { type: 'json_schema', json_schema: { name: 'proof', schema: { type: 'object' } } },
+        tools: plannerTools()
+      });
+      await run.final;
+      throw new Error('QVAC accepted grammar plus tools.');
+    } catch (error) {
+      const code = errorCode(error);
+      if (code !== 50010) throw error;
+      return code;
+    }
   }
 
   async grammar(request: GrammarRequest): Promise<unknown> {
@@ -106,13 +126,19 @@ type QvacRun = {
 };
 
 type QvacSdk = {
-  loadModel(input: { modelSrc: string; modelType: string; modelConfig: { ctx_size: number; tools: boolean } }): Promise<string>;
+  loadModel(input: { modelSrc: string; modelType: string; modelConfig: { ctx_size: number; tools: boolean; device?: string } }): Promise<string>;
   unloadModel(input: { modelId: string; clearStorage: boolean }): Promise<void>;
   completion(input: Record<string, unknown>): QvacRun;
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function errorCode(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
+  const code = error.code;
+  return typeof code === 'number' ? code : undefined;
 }
 
 function parseToolCall(value: unknown): ToolCall {
@@ -128,4 +154,4 @@ function parseToolCall(value: unknown): ToolCall {
   return { name: candidate.name, arguments: argumentsValue };
 }
 
-export { jsonGrammar };
+export { FileDropModelAdapter, jsonGrammar };

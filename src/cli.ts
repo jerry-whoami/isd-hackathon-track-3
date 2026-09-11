@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { loadCorpus, parseDocumentType } from './corpus.ts';
 import { extractPdf } from './ingest.ts';
-import { QvacModelAdapter } from './model-port.ts';
+import { FileDropModelAdapter, QvacModelAdapter } from './model-port.ts';
 import { review } from './review.ts';
 
 const [pdfPath, documentTypeArg, jobDirectory = 'jobs/review'] = process.argv.slice(2);
@@ -12,7 +12,9 @@ if (!pdfPath || !documentTypeArg) {
   process.exitCode = 1;
 } else {
   const documentType = parseDocumentType(documentTypeArg);
-  const model = await QvacModelAdapter.load();
+  const model = process.env.FARADAY_INFERENCE === 'file-drop'
+    ? new FileDropModelAdapter()
+    : await QvacModelAdapter.load();
   try {
     const extractedText = await extractPdf(pdfPath);
     const record = await review({
@@ -25,6 +27,6 @@ if (!pdfPath || !documentTypeArg) {
     await writeFile(path.join(jobDirectory, 'review-record.json'), `${JSON.stringify(record, null, 2)}\n`);
     console.log(path.join(jobDirectory, 'review-record.json'));
   } finally {
-    await model.close();
+    if (model instanceof QvacModelAdapter) await model.close();
   }
 }

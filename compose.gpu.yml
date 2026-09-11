@@ -1,0 +1,7 @@
+services:
+  inference:
+    environment:
+      FARADAY_DEVICE: gpu
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+    devices:
+      - nvidia.com/gpu=all
