@@ -13,6 +13,7 @@ assert.deepEqual(await model.tools({
   messages: [{ role: 'user', content: '{"findings":[]}' }],
   tools: []
 }), {
-  toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Prueba.' } }]
+  toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Prueba.' } }],
+  text: 'Resumen de prueba.'
 });
 console.log('File-drop round trip passed.');

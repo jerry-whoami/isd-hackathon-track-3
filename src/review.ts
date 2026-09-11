@@ -1,7 +1,7 @@
 import { applicableSections, parseCorpus } from './corpus.ts';
 import { declaredBeneficialOwnerSentence, liabilityClauseWindow, ownershipTable, paragraphChunks, paymentClauseWindow, spanFromWordAnchor, type Chunk, type OwnershipTable } from './ingest.ts';
-import { type ModelPort } from './model-port.ts';
-import { coverageSchema, declaredBeneficialOwnerSchema, holdingsSchema, jurisdictionClaimSchema, jurisdictionLabel, jsonGrammar, liabilityCapClaimSchema, paymentClaimSchema, plannerTools, type AttackPosition, type DocumentType, type PolicySection, type Topic } from './schemas.ts';
+import { type ModelPort, type ToolCall } from './model-port.ts';
+import { coverageSchema, declaredBeneficialOwnerSchema, holdingsSchema, jurisdictionClaimSchema, jurisdictionLabel, jsonGrammar, liabilityCapClaimSchema, paymentClaimSchema, plannerToolSchemas, plannerTools, type AttackPosition, type DocumentType, type PolicySection, type Topic } from './schemas.ts';
 import { validateCorporateShareholder, validateDeclaredBeneficialOwner, validateHoldingClaim, validateJurisdictionClaim, validateLiabilityCapClaim, validatePaymentClaim, validateUboMismatch, type VerificationStatus } from './validator.ts';
 
 export type ReviewDocument = {
@@ -33,7 +33,7 @@ export type ReviewRecord = {
 
   failClosedReasons: string[];
   plannerInput: unknown;
-  actionLedger: { path: 'contained'; tool: string; arguments: Record<string, unknown>; refused: boolean }[];
+  actionLedger: { path: 'contained'; tool: string; arguments: Record<string, unknown>; refused: boolean; refusedReason?: string; forcedByGate?: true }[];
   outcome: 'approve_submission' | 'route_to_human' | 'quarantine_submission';
   summary: string;
   renderedReport: string;
@@ -47,7 +47,7 @@ export type NaiveReviewRecord = {
   summary: string;
 };
 
-const plannerTaskPrompt = 'Eres el Planner de una comisión verificadora. Decide el expediente llamando exactamente una herramienta.';
+const plannerTaskPrompt = 'Eres el Planner de una comisión verificadora. Decide el expediente llamando exactamente una herramienta y escribe un resumen breve en español, de máximo 240 caracteres, usando solo los metadatos recibidos.';
 
 export function review(input: NaiveReviewInput): Promise<NaiveReviewRecord>;
 export function review(input: ContainedReviewInput): Promise<ReviewRecord>;
@@ -312,19 +312,13 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
     messages: [{ role: 'system', content: `${plannerTaskPrompt} Recibes solo registros tipados, no el documento.` }, { role: 'user', content: JSON.stringify(plannerInput) }],
     tools: plannerTools()
   });
-  const actionLedger: ReviewRecord['actionLedger'] = [];
-  let outcome: ReviewRecord['outcome'] = 'route_to_human';
-  const call = plannerResult.toolCalls[0];
-  if (!call) throw new Error('Planner made no tool call.');
   const approvalBlocked = claims.some((claim) => claim.verificationStatus !== 'verified') || failClosedReasons.length > 0;
-  if (call.name === 'approve_submission' && approvalBlocked) {
-    actionLedger.push({ path: 'contained', tool: call.name, arguments: call.arguments, refused: true });
-  } else if (call.name === 'approve_submission' || call.name === 'route_to_human' || call.name === 'quarantine_submission') {
-    actionLedger.push({ path: 'contained', tool: call.name, arguments: call.arguments, refused: false });
-    outcome = call.name;
-  } else {
-    throw new Error(`Planner called unknown tool ${call.name}.`);
-  }
+  const plan = executeContainedPlan({
+    toolCalls: plannerResult.toolCalls,
+    approvalBlocked,
+    failClosedReasons,
+    findingIds: findings.map((finding) => finding.id)
+  });
 
   const renderedReport = findings.map((finding) => {
     const span = spans.get(finding.spanId);
@@ -345,9 +339,9 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
     findings,
     failClosedReasons,
     plannerInput,
-    actionLedger,
-    outcome,
-    summary: outcome === 'route_to_human' ? 'Expediente enviado a revisión humana.' : 'Expediente procesado.',
+    actionLedger: plan.actionLedger,
+    outcome: plan.outcome,
+    summary: plannerSummary(plannerResult.text, plan.outcome),
     renderedReport
   };
 }
@@ -377,8 +371,72 @@ async function naiveReview(input: ReviewInput): Promise<NaiveReviewRecord> {
     naivePrompt: { messages },
     actionLedger: [{ path: 'naive', label: 'Agente convencional', tool: call.name, arguments: call.arguments, refused: false }],
     outcome: call.name,
-    summary: call.name === 'route_to_human' ? 'Expediente enviado a revisión humana.' : 'Expediente procesado.'
+    summary: plannerSummary(result.text, call.name)
   };
+}
+
+function executeContainedPlan(input: {
+  toolCalls: ToolCall[];
+  approvalBlocked: boolean;
+  failClosedReasons: string[];
+  findingIds: string[];
+}): Pick<ReviewRecord, 'actionLedger' | 'outcome'> {
+  const validSingleCall = input.toolCalls.length === 1 && isValidOutcomeCall(input.toolCalls[0]!);
+  if (!validSingleCall) {
+    const refusedCalls: ReviewRecord['actionLedger'] = input.toolCalls.map((call) => ({
+      path: 'contained',
+      tool: call.name,
+      arguments: call.arguments,
+      refused: true,
+      refusedReason: 'invalid Planner plan'
+    }));
+    return forceHumanRoute(refusedCalls, input.findingIds, 'plan inválido del Planner');
+  }
+
+  const call = input.toolCalls[0] as ToolCall & { name: ReviewRecord['outcome'] };
+  if (call.name === 'approve_submission' && input.approvalBlocked) {
+    const reason = input.failClosedReasons.length > 0
+      ? input.failClosedReasons.join('; ')
+      : 'la compuerta de aprobación detectó claims obligatorios no verificados';
+    return forceHumanRoute([{
+      path: 'contained',
+      tool: call.name,
+      arguments: call.arguments,
+      refused: true,
+      refusedReason: 'approval gate'
+    }], input.findingIds, reason);
+  }
+
+  return {
+    actionLedger: [{ path: 'contained', tool: call.name, arguments: call.arguments, refused: false }],
+    outcome: call.name
+  };
+}
+
+function forceHumanRoute(
+  actionLedger: ReviewRecord['actionLedger'],
+  findingIds: string[],
+  reason: string
+): Pick<ReviewRecord, 'actionLedger' | 'outcome'> {
+  actionLedger.push({
+    path: 'contained',
+    tool: 'route_to_human',
+    arguments: { finding_ids: findingIds, reason },
+    refused: false,
+    forcedByGate: true
+  });
+  return { actionLedger, outcome: 'route_to_human' };
+}
+
+function isValidOutcomeCall(call: ToolCall): call is ToolCall & { name: ReviewRecord['outcome'] } {
+  if (!isOutcomeTool(call.name)) return false;
+  return plannerToolSchemas[call.name].safeParse(call.arguments).success;
+}
+
+function plannerSummary(text: string, outcome: ReviewRecord['outcome']): string {
+  const summary = text.trim();
+  if (summary.length > 0 && summary.length <= 240) return summary;
+  return outcome === 'route_to_human' ? 'Expediente enviado a revisión humana.' : 'Expediente procesado.';
 }
 
 function isOutcomeTool(name: string): name is NaiveReviewRecord['outcome'] {

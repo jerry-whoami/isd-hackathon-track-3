@@ -42,6 +42,7 @@ docker compose up --build
 ```
 
 For Vulkan GPU inference, install NVIDIA Container Toolkit with Docker CDI configured, then apply the GPU override.
+Set `NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics`; the `graphics` capability exposes the Vulkan driver needed by QVAC.
 The override uses `nvidia.com/gpu=all`, not `--gpus all` or the legacy `nvidia` driver.
 
 ```sh

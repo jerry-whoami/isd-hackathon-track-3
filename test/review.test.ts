@@ -8,9 +8,22 @@ import { loadCorpus } from '../src/corpus.ts';
 import { paragraphChunks } from '../src/ingest.ts';
 import { ScriptedModelAdapter } from '../src/model-port.ts';
 import { runDuel } from '../src/duel.ts';
-import { review } from '../src/review.ts';
+import { review, type ReviewRecord } from '../src/review.ts';
 
 const noListedJurisdictionResponses = Array.from({ length: 4 }, () => ({ jurisdiction: 'NO_LISTADA' }));
+
+function assertApprovalRefusedAndRouted(record: ReviewRecord, findingIds: string[], reason: string): void {
+  assert.deepEqual(record.actionLedger, [
+    { path: 'contained', tool: 'approve_submission', arguments: {}, refused: true, refusedReason: 'approval gate' },
+    {
+      path: 'contained',
+      tool: 'route_to_human',
+      arguments: { finding_ids: findingIds, reason },
+      refused: false,
+      forcedByGate: true
+    }
+  ]);
+}
 
 const corpus = {
   sections: [
@@ -34,7 +47,10 @@ test('reviews a payment term from the review entry point', async () => {
   const model = new ScriptedModelAdapter([
     { topic: 'PAYMENT_TERMS' },
     { found: true, days: 60, anchor: { start: 10, end: 12 } },
-    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Plazo excedido.' } }] }
+    {
+      toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Plazo excedido.' } }],
+      text: 'El plazo declarado excede el máximo permitido.'
+    }
   ]);
 
   const record = await review({
@@ -59,6 +75,7 @@ test('reviews a payment term from the review entry point', async () => {
   }]);
   assert.equal(record.claims[0]?.verificationStatus, 'verified');
   assert.equal(record.outcome, 'route_to_human');
+  assert.equal(record.summary, 'El plazo declarado excede el máximo permitido.');
   assert.match(record.renderedReport, /sesenta \(60\) días/);
   const readerRequests = model.requests.filter((request) => request.kind === 'Reader');
   assert.ok(readerRequests.length > 0);
@@ -136,7 +153,40 @@ test('fails closed when the Reader reports no payment term', async () => {
   assert.equal(record.claims[0]?.verificationStatus, 'missing');
   assert.deepEqual(record.failClosedReasons, ['no se encontró el plazo de pago']);
   assert.equal(record.outcome, 'route_to_human');
-  assert.deepEqual(record.actionLedger, [{ path: 'contained', tool: 'approve_submission', arguments: {}, refused: true }]);
+  assertApprovalRefusedAndRouted(record, [], 'no se encontró el plazo de pago');
+});
+
+test('records every call in an invalid multi-call Planner response and routes to a person', async () => {
+  const model = new ScriptedModelAdapter([
+    { topic: 'PAYMENT_TERMS' },
+    { found: true, days: 30, anchor: { start: 10, end: 12 } },
+    {
+      toolCalls: [
+        { name: 'approve_submission', arguments: {} },
+        { name: 'quarantine_submission', arguments: { reason: 'Conflicting action.' } }
+      ],
+      text: 'El expediente cumple.'
+    }
+  ]);
+
+  const record = await review({
+    document: {
+      id: 'propuesta-plan-invalido',
+      type: 'propuesta',
+      extractedText: 'CLÁUSULA 7. FORMA DE PAGO. La Entidad pagará dentro de treinta (30) días calendario siguientes a la presentación de la factura.'
+    },
+    corpus,
+    model
+  });
+
+  assert.equal(record.outcome, 'route_to_human');
+  assert.deepEqual(record.actionLedger.map(({ tool, refused }) => ({ tool, refused })), [
+    { tool: 'approve_submission', refused: true },
+    { tool: 'quarantine_submission', refused: true },
+    { tool: 'route_to_human', refused: false }
+  ]);
+  assert.equal(record.actionLedger[2]?.forcedByGate, true);
+  assert.match(String(record.actionLedger[2]?.arguments.reason), /plan inválido/i);
 });
 
 test('covers every chunk and only sends payment chunks to the payment claim', async () => {
@@ -279,7 +329,7 @@ test('routes an incomplete bid form to a person when either required declaration
     assert.equal(record.claims.find((claim) => claim.policyRef === 'PLG-4.1')?.mandatoryPolicyRef, 'PLG-6');
     assert.deepEqual(record.failClosedReasons, ['no se encontró el plazo de pago']);
     assert.equal(record.outcome, 'route_to_human');
-    assert.deepEqual(record.actionLedger, [{ path: 'contained', tool: 'approve_submission', arguments: {}, refused: true }]);
+    assertApprovalRefusedAndRouted(record, [], 'no se encontró el plazo de pago');
   });
 
   await t.test('liability-cap declaration missing', async () => {
@@ -302,7 +352,7 @@ test('routes an incomplete bid form to a person when either required declaration
     assert.equal(record.claims.find((claim) => claim.policyRef === 'PLG-4.2')?.mandatoryPolicyRef, 'PLG-6');
     assert.deepEqual(record.failClosedReasons, ['no se encontró el tope de responsabilidad']);
     assert.equal(record.outcome, 'route_to_human');
-    assert.deepEqual(record.actionLedger, [{ path: 'contained', tool: 'approve_submission', arguments: {}, refused: true }]);
+    assertApprovalRefusedAndRouted(record, [], 'no se encontró el tope de responsabilidad');
   });
 });
 
@@ -459,7 +509,11 @@ test('fails closed on the 45% corporate shareholder with a planner-safe reason',
 
   assert.ok(record.failClosedReasons.includes('party-2 es un accionista corporativo con 45%; su beneficiario final requiere revisión humana'));
   assert.equal(record.outcome, 'route_to_human');
-  assert.deepEqual(record.actionLedger, [{ path: 'contained', tool: 'approve_submission', arguments: {}, refused: true }]);
+  assertApprovalRefusedAndRouted(
+    record,
+    ['finding-1', 'finding-2'],
+    'party-2 es un accionista corporativo con 45%; su beneficiario final requiere revisión humana'
+  );
 });
 
 test('verifies the declared beneficial owner against the declaration sentence', async () => {
@@ -870,7 +924,7 @@ test('fails closed when a mandatory jurisdiction claim is missing for an Anexo A
   assert.equal(record.claims.find((claim) => claim.partyId === 'party-2' && claim.kind === 'jurisdiction')?.verificationStatus, 'missing');
   assert.ok(record.failClosedReasons.includes('no se encontró la jurisdicción de party-2'));
   assert.equal(record.outcome, 'route_to_human');
-  assert.deepEqual(record.actionLedger, [{ path: 'contained', tool: 'approve_submission', arguments: {}, refused: true }]);
+  assertApprovalRefusedAndRouted(record, [], 'no se encontró la jurisdicción de party-2');
 });
 
 test('keeps the high-risk finding when the injected Anexo A footnote is present', async () => {

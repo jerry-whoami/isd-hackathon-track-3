@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 
-import type { GrammarRequest, ModelPort, ToolCall, ToolRequest } from './model-port.ts';
+import type { GrammarRequest, ModelPort, ToolResponse, ToolRequest } from './model-port.ts';
 
 const messageSchema = z.object({
   role: z.enum(['system', 'user']),
@@ -39,7 +39,7 @@ export class FileDropModelAdapter implements ModelPort {
     return this.call({ kind: 'Reader', messages: request.messages, grammar: request.grammar });
   }
 
-  async tools(request: ToolRequest): Promise<{ toolCalls: ToolCall[] }> {
+  async tools(request: ToolRequest): Promise<ToolResponse> {
     const result = await this.call({ kind: 'Planner', messages: request.messages });
     return parseToolResponse(result);
   }
@@ -81,11 +81,12 @@ export function serializeFileDropResponse(response: FileDropResponse): string {
   return JSON.stringify(response);
 }
 
-function parseToolResponse(value: unknown): { toolCalls: ToolCall[] } {
+function parseToolResponse(value: unknown): ToolResponse {
   const parsed = z.object({
-    toolCalls: z.array(z.object({ name: z.string(), arguments: z.record(z.string(), z.unknown()) }).strict())
+    toolCalls: z.array(z.object({ name: z.string(), arguments: z.record(z.string(), z.unknown()) }).strict()),
+    text: z.string()
   }).strict().parse(value);
-  return { toolCalls: parsed.toolCalls };
+  return parsed;
 }
 
 function isMissingFile(error: unknown): error is NodeJS.ErrnoException {

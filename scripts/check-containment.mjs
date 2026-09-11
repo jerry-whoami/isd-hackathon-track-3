@@ -8,7 +8,7 @@ const project = `faraday-check-${process.pid}`;
 const environmentFile = path.join(mkdtempSync(path.join(tmpdir(), 'faraday-compose-')), '.env');
 const responses = JSON.stringify([
   { topic: 'PAYMENT_TERMS' },
-  { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Prueba.' } }] },
+  { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Prueba.' } }], text: 'Resumen de prueba.' },
   ...Array.from({ length: 17 }, (_, index) => ({ topic: index === 10 ? 'PAYMENT_TERMS' : 'NONE' })),
   { found: true, days: 60, anchor: { start: 15, end: 17 } },
   { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Plazo excedido.' } }] }

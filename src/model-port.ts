@@ -4,6 +4,7 @@ import { FileDropModelAdapter } from './file-drop.ts';
 export type Message = { role: 'system' | 'user'; content: string };
 export type ToolDefinition = ReturnType<typeof import('./schemas.ts').plannerTools>[number];
 export type ToolCall = { name: string; arguments: Record<string, unknown> };
+export type ToolResponse = { toolCalls: ToolCall[]; text: string };
 
 export type GrammarRequest = {
   kind: 'Reader';
@@ -21,7 +22,7 @@ export type ModelRequest = GrammarRequest | ToolRequest;
 
 export interface ModelPort {
   grammar(request: GrammarRequest): Promise<unknown>;
-  tools(request: ToolRequest): Promise<{ toolCalls: ToolCall[] }>;
+  tools(request: ToolRequest): Promise<ToolResponse>;
 }
 
 export class ScriptedModelAdapter implements ModelPort {
@@ -37,13 +38,16 @@ export class ScriptedModelAdapter implements ModelPort {
     return this.next();
   }
 
-  async tools(request: ToolRequest): Promise<{ toolCalls: ToolCall[] }> {
+  async tools(request: ToolRequest): Promise<ToolResponse> {
     this.requests.push(request);
     const response = this.next();
     if (!isObject(response) || !Array.isArray(response.toolCalls)) {
       throw new Error('Scripted Planner response must contain toolCalls.');
     }
-    return { toolCalls: response.toolCalls.map(parseToolCall) };
+    if (response.text !== undefined && typeof response.text !== 'string') {
+      throw new Error('Scripted Planner response text must be a string.');
+    }
+    return { toolCalls: response.toolCalls.map(parseToolCall), text: response.text ?? '' };
   }
 
   private next(): unknown {
@@ -104,7 +108,7 @@ export class QvacModelAdapter implements ModelPort {
     return JSON.parse(final.contentText);
   }
 
-  async tools(request: ToolRequest): Promise<{ toolCalls: ToolCall[] }> {
+  async tools(request: ToolRequest): Promise<ToolResponse> {
     const run = this.sdk.completion({
       modelId: this.modelId,
       history: request.messages,
@@ -115,7 +119,10 @@ export class QvacModelAdapter implements ModelPort {
     for await (const _event of run.events) {
       // QVAC must be drained before its tool calls are available.
     }
-    return { toolCalls: (await run.toolCalls).map((call) => parseToolCall(call)) };
+    return {
+      toolCalls: (await run.toolCalls).map((call) => parseToolCall(call)),
+      text: await run.text
+    };
   }
 }
 
@@ -123,6 +130,7 @@ type QvacRun = {
   events: AsyncIterable<unknown>;
   final: Promise<{ contentText: string }>;
   toolCalls: Promise<unknown[]>;
+  text: Promise<string>;
 };
 
 type QvacSdk = {
