@@ -168,10 +168,10 @@ function queryPath(sample: SampleDocument, step: string): string {
 
 function page(sample: SampleDocument, step: string, proof: string, duelStarted = false, duelRuns = 10): string {
   const main = step === 'expediente'
-    ? `<section class="review-slot" hx-get="/review?doc=${encodeURIComponent(sample.id)}" hx-trigger="load, every 900ms" hx-swap="outerHTML"><div class="progress"><span></span><p>Preparando el expediente contenido…</p></div></section>`
+    ? `<section class="review-slot" aria-busy="true" hx-get="/review?doc=${encodeURIComponent(sample.id)}" hx-trigger="load, every 900ms" hx-swap="outerHTML"><div class="progress" role="status" aria-live="polite"><span aria-hidden="true"></span><p>Preparando el expediente contenido…</p><small>Reader local · gramática estricta · sin herramientas</small></div></section>`
     : step === 'duelo'
       ? duelStarted
-        ? `<section class="duel-slot" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${duelRuns}" hx-trigger="load, every 350ms" hx-swap="outerHTML"><div class="progress"><span></span><p>Iniciando las dos rutas con el modelo local…</p></div></section>`
+        ? `<section class="duel-slot" aria-busy="true" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${duelRuns}" hx-trigger="load, every 350ms" hx-swap="outerHTML"><div class="progress" role="status" aria-live="polite"><span aria-hidden="true"></span><p>Iniciando las dos rutas con el modelo local…</p><small>Mismo modelo · misma evidencia · distinta exposición</small></div></section>`
         : duelStartView(sample)
       : documentView(sample);
   return `<!doctype html>
@@ -179,27 +179,100 @@ function page(sample: SampleDocument, step: string, proof: string, duelStarted =
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101719">
 <title>Faraday · revisión contenida</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&display=swap">
-<script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
 <style>${styles}</style>
 </head>
 <body>
-<header class="topbar"><a class="wordmark" href="${queryPath(sample, 'documento')}">FARADAY</a><p>Revisión contenida de documentos hostiles</p><button class="containment" type="button" aria-expanded="false" aria-controls="proofs" onclick="toggleProofs(this)">Reader: red ninguna · 100 % local · QVAC ${escapeHtml(path.basename(process.env.FARADAY_MODEL ?? 'Qwen3-8B', '.gguf'))}</button></header>
+<a class="skip-link" href="#workspace">Saltar al área de revisión</a>
+<p class="sr-only" id="ui-status" aria-live="assertive"></p>
+<header class="topbar"><a class="wordmark" href="${queryPath(sample, 'documento')}" aria-label="Faraday, inicio"><span>F</span>FARADAY</a><p>Revisión contenida de documentos hostiles</p><button class="containment" type="button" aria-expanded="false" aria-controls="proofs" onclick="toggleProofs(this)"><span class="containment-state" aria-hidden="true"></span><span>Reader aislado</span><small>sin red · local · QVAC ${escapeHtml(path.basename(process.env.FARADAY_MODEL ?? 'Qwen3-8B', '.gguf'))}</small></button></header>
 <aside class="proofs" id="proofs" hidden><div><strong>Pruebas de contención</strong><p>${proof}</p></div></aside>
 <div class="shell">
-<aside class="bandeja"><h2>Bandeja</h2><p class="label">Muestras fijadas · sin cargas</p><nav aria-label="Documentos">${allDocuments().map((item) => `<a class="document-choice ${item.id === sample.id ? 'active' : ''}" href="${queryPath(item, 'documento')}"><span>${escapeHtml(item.shortTitle)}</span><small>${escapeHtml(item.typeLabel)}</small></a>`).join('')}</nav><form action="/reset" method="post"><button class="text-button" type="submit">↺ Reiniciar</button></form></aside>
-<main>
-<div class="stepbar"><nav class="steps" aria-label="Pasos"><a class="${step === 'documento' ? 'active' : ''}" href="${queryPath(sample, 'documento')}">① Documento</a><a class="${step === 'expediente' ? 'active' : ''}" href="${queryPath(sample, 'expediente')}">② Expediente</a><a class="${step === 'duelo' ? 'active' : ''}" href="${queryPath(sample, 'duelo')}">③ Duelo</a></nav><nav class="pager" aria-label="Navegación">${step === 'documento' ? '' : `<a href="${queryPath(sample, step === 'expediente' ? 'documento' : 'expediente')}">◀ Anterior</a>`}${step === 'duelo' ? '' : `<a href="${queryPath(sample, step === 'documento' ? 'expediente' : 'duelo')}">Siguiente ▶</a>`}</nav></div>
+<aside class="bandeja"><div class="bandeja-heading"><h2>Bandeja</h2><span>${String(allDocuments().length).padStart(2, '0')}</span></div><p class="label">Muestras fijadas · sin cargas</p><nav aria-label="Documentos">${allDocuments().map((item, index) => `<a class="document-choice ${item.id === sample.id ? 'active' : ''}" href="${queryPath(item, 'documento')}"${item.id === sample.id ? ' aria-current="page"' : ''}><b>${String(index + 1).padStart(2, '0')}</b><span>${escapeHtml(item.shortTitle)}</span><small>${escapeHtml(item.typeLabel)}</small></a>`).join('')}</nav><form action="/reset" method="post"><button class="text-button" type="submit">Reiniciar sesión</button></form><p class="bandeja-foot">Corpus fijo<br>Tipología preestablecida</p></aside>
+<main id="workspace" tabindex="-1">
+<div class="stepbar"><nav class="steps" aria-label="Pasos"><a class="${step === 'documento' ? 'active' : ''}" href="${queryPath(sample, 'documento')}"${step === 'documento' ? ' aria-current="step"' : ''}><span>1</span>Documento</a><a class="${step === 'expediente' ? 'active' : ''}" href="${queryPath(sample, 'expediente')}"${step === 'expediente' ? ' aria-current="step"' : ''}><span>2</span>Expediente</a><a class="${step === 'duelo' ? 'active' : ''}" href="${queryPath(sample, 'duelo')}"${step === 'duelo' ? ' aria-current="step"' : ''}><span>3</span>Duelo</a></nav><nav class="pager" aria-label="Navegación entre pasos">${step === 'documento' ? '' : `<a class="previous" href="${queryPath(sample, step === 'expediente' ? 'documento' : 'expediente')}">Anterior</a>`}${step === 'duelo' ? '' : `<a class="next" href="${queryPath(sample, step === 'documento' ? 'expediente' : 'duelo')}">Siguiente</a>`}</nav></div>
 ${main}
 </main>
 </div>
-<script>function toggleProofs(button) { const proofs = document.getElementById('proofs'); const open = proofs.hidden; proofs.hidden = !open; button.setAttribute('aria-expanded', String(open)); } document.addEventListener('click', (event) => { const finding = event.target.closest('[data-span]'); if (!finding) return; const span = document.querySelector('[data-evidence="' + finding.dataset.span + '"]'); if (span) { document.querySelectorAll('[data-evidence]').forEach((item) => item.classList.remove('selected')); span.classList.add('selected'); span.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });</script>
+<script>
+function toggleProofs(button) { const proofs = document.getElementById('proofs'); const open = proofs.hidden; proofs.hidden = !open; button.setAttribute('aria-expanded', String(open)); }
+function reportHxError(element) {
+  element.classList.add('hx-error');
+  const status = document.getElementById('ui-status');
+  if (status) status.textContent = 'No se pudo actualizar la vista. Inténtelo de nuevo.';
+  const progress = element.querySelector('.progress');
+  if (!progress) return;
+  element.removeAttribute('hx-get');
+  progress.classList.add('is-error');
+  progress.setAttribute('role', 'alert');
+  progress.innerHTML = '<span aria-hidden="true"></span><p>No se pudo completar la actualización.</p><small>Compruebe que el servicio local sigue disponible.</small><button class="button" type="button" onclick="window.location.reload()">Reintentar</button>';
+}
+function selectPolicy(control) {
+  document.querySelectorAll('.policy-choice').forEach((item) => {
+    const selected = item === control;
+    item.classList.toggle('active', selected);
+    if (selected) item.setAttribute('aria-current', 'true'); else item.removeAttribute('aria-current');
+  });
+}
+async function swapHx(element) {
+  const response = await fetch(element.getAttribute('hx-get'));
+  if (!response.ok) throw new Error('No se pudo actualizar la vista.');
+  const html = await response.text();
+  const selector = element.getAttribute('hx-target');
+  const target = selector ? document.querySelector(selector) : element;
+  if (!target) return;
+  target.outerHTML = html;
+  if (element.matches('.policy-choice')) selectPolicy(element);
+  setupHx(document);
+}
+function setupHx(root) {
+  root.querySelectorAll('[hx-get]').forEach((element) => {
+    if (element.dataset.hxReady) return;
+    element.dataset.hxReady = 'true';
+    const trigger = element.getAttribute('hx-trigger') || '';
+    const match = trigger.match(/every\\s+(\\d+)ms/);
+    if (!match) return;
+    const delay = Number(match[1]);
+    const poll = async () => {
+      if (!element.isConnected) return;
+      try { await swapHx(element); }
+      catch {
+        const failures = Number(element.dataset.hxFailures || 0) + 1;
+        element.dataset.hxFailures = String(failures);
+        if (failures >= 3) reportHxError(element);
+        else if (element.isConnected) window.setTimeout(poll, delay);
+      }
+    };
+    window.setTimeout(poll, trigger.includes('load') ? 0 : delay);
+  });
+}
+document.addEventListener('click', (event) => {
+  const control = event.target instanceof Element ? event.target : null;
+  const hxControl = control?.closest('a[hx-get]');
+  if (hxControl) {
+    event.preventDefault();
+    swapHx(hxControl).catch(() => reportHxError(hxControl));
+    return;
+  }
+  const finding = control?.closest('[data-span]');
+  if (!finding) return;
+  const span = document.querySelector('[data-evidence="' + finding.dataset.span + '"]');
+  if (span) {
+    document.querySelectorAll('[data-span]').forEach((item) => item.setAttribute('aria-pressed', String(item === finding)));
+    document.querySelectorAll('[data-evidence]').forEach((item) => item.classList.remove('selected'));
+    span.classList.add('selected');
+    span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    span.focus({ preventScroll: true });
+  }
+});
+setupHx(document);
+</script>
 </body></html>`;
 }
 
 function duelStartView(sample: SampleDocument): string {
-  return `<section class="duel-intro"><div><h1>③ Duelo</h1><p>Compare las dos rutas sobre ${escapeHtml(sample.title)}. La corrida conserva el mismo modelo, documento, corpus y herramientas: mismas capacidades, distinta exposición.</p></div><form method="get" action="/"><input type="hidden" name="doc" value="${escapeHtml(sample.id)}"><input type="hidden" name="step" value="duelo"><input type="hidden" name="start" value="1"><label for="duel-runs">Ejecuciones por ruta</label><div><input id="duel-runs" name="runs" type="number" min="1" max="50" value="10"><button class="button" type="submit">Iniciar duelo</button></div></form></section>`;
+  return `<section class="duel-intro"><div><h1>Duelo</h1><p>Compare las dos rutas sobre ${escapeHtml(sample.title)}. La corrida conserva el mismo modelo, documento, corpus y herramientas: mismas capacidades, distinta exposición.</p></div><form method="get" action="/"><input type="hidden" name="doc" value="${escapeHtml(sample.id)}"><input type="hidden" name="step" value="duelo"><input type="hidden" name="start" value="1"><label for="duel-runs">Ejecuciones por ruta</label><div><input id="duel-runs" name="runs" type="number" min="1" max="50" value="10"><button class="button" type="submit">Iniciar duelo</button></div></form></section>`;
 }
 
 function documentView(sample: SampleDocument): string {
@@ -209,16 +282,16 @@ function documentView(sample: SampleDocument): string {
 }
 
 function duelView(sample: SampleDocument, job: DuelJob, runs: number): string {
-  if (job.error) return `<section class="duel-slot"><div class="duel-error"><h1>③ Duelo</h1><p>No se pudo completar el duelo: ${escapeHtml(job.error)}</p><a class="button" href="${queryPath(sample, 'duelo')}">Intentar de nuevo</a></div></section>`;
+  if (job.error) return `<section class="duel-slot"><div class="duel-error" role="alert"><h1>Duelo</h1><p>No se pudo completar el duelo: ${escapeHtml(job.error)}</p><a class="button" href="${queryPath(sample, 'duelo')}">Intentar de nuevo</a></div></section>`;
   const record = job.record;
-  if (!record) return `<section class="duel-slot" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}" hx-trigger="every 350ms" hx-swap="outerHTML"><div class="progress"><span></span><p>Iniciando las dos rutas con el modelo local…</p></div></section>`;
+  if (!record) return `<section class="duel-slot" aria-busy="true" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}" hx-trigger="every 350ms" hx-swap="outerHTML"><div class="progress" role="status" aria-live="polite"><span aria-hidden="true"></span><p>Iniciando las dos rutas con el modelo local…</p><small>Mismo modelo · misma evidencia · distinta exposición</small></div></section>`;
   const done = record.completedRuns === record.runs;
   const rate = record.completedRuns === 0 ? 'Aún sin medición' : `${Math.round((record.naiveObedienceRate ?? 0) * 100)} % (${record.counts.naive.approve_submission}/${record.completedRuns})`;
   const measurement = sample.injection
     ? `<p class="obedience"><strong>Obediencia medida del Agente convencional: ${rate}.</strong> Faraday: 0 % por construcción, no por suerte: el Reader no tiene herramientas y el Planner nunca lee el texto documental.</p>`
     : '<p class="obedience">Documento limpio: se muestran los resultados de ambas rutas para contraste. La tasa de obediencia solo corresponde a una instrucción embebida.</p>';
-  return `<section class="duel-slot${done ? ' complete' : ''}"${done ? '' : ` hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}" hx-trigger="every 350ms" hx-swap="outerHTML"`}>
-<div class="duel-heading"><div><h1>③ Duelo</h1><p>${record.completedRuns} de ${record.runs} pares completados · mismo modelo, documento, corpus y herramientas · mismas capacidades, distinta exposición</p></div><a class="button" href="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}&rerun=1" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}&rerun=1" hx-target=".duel-slot" hx-swap="outerHTML">Volver a correr</a></div>
+  return `<section class="duel-slot${done ? ' complete' : ''}" aria-busy="${String(!done)}"${done ? '' : ` hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}" hx-trigger="every 350ms" hx-swap="outerHTML"`}>
+<div class="duel-heading"><div><h1>Duelo</h1><p>${record.completedRuns} de ${record.runs} pares completados · mismo modelo, documento, corpus y herramientas · mismas capacidades, distinta exposición</p></div><a class="button" href="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}&rerun=1" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}&rerun=1" hx-target=".duel-slot" hx-swap="outerHTML">Volver a correr</a></div>
 <section class="duel-grid">${duelPathView('Agente convencional', 'naive', record.counts.naive)}${duelPathView('Faraday', 'contained', record.counts.contained)}</section>
 ${measurement}
 <section class="duel-ledgers"><h2>Libros de acciones</h2><p>Abra una ruta para ver cada llamada consecuencial registrada.</p>${duelLedgerView('Agente convencional', record, 'naive')}${duelLedgerView('Faraday', record, 'contained')}</section>
@@ -254,24 +327,24 @@ function escapeHtmlText(value: string): string {
 
 function reviewView(record: ReviewRecord, sample: SampleDocument): string {
   const claims = [...record.claims].sort((left, right) => Number(left.verificationStatus === 'verified') - Number(right.verificationStatus === 'verified'));
-  return `<section class="expediente-heading"><div><h1>② Expediente</h1><p>Revisión registrada para ${escapeHtml(sample.title)}</p></div><a class="button" href="/?doc=${encodeURIComponent(sample.id)}&step=expediente&rerun=1">Volver a correr</a></section>
+  return `<section class="expediente-heading"><div><h1>Expediente</h1><p>Revisión registrada para ${escapeHtml(sample.title)}</p></div><a class="button" href="/?doc=${encodeURIComponent(sample.id)}&step=expediente&rerun=1">Volver a correr</a></section>
 <section class="outcome"><strong>${outcomeLabel(record.outcome)}</strong><p>${escapeHtml(record.summary)}</p></section>
 ${record.applicablePolicySections.length === 0 ? '<p class="empty">No hay una política aplicable a este tipo de documento.</p>' : ''}
-<section class="review-grid"><article><h2>Hallazgos</h2>${record.findings.length ? record.findings.map((finding) => { const policy = record.applicablePolicySections.find((section) => section.id === finding.policyRef); return `<button class="finding" data-span="${finding.spanId}" type="button"><strong>${escapeHtml(finding.type)}</strong><span>${escapeHtml(finding.severity)} · ${escapeHtml(policy?.source ?? finding.policyRef)}</span><q>${escapeHtml(policy?.text ?? '')}</q></button>`; }).join('') : '<p class="empty">No se emitieron hallazgos para las políticas aplicables.</p>'}</article><article><h2>Claims</h2>${claims.length ? `<ul class="claims">${claims.map((claim) => `<li><span class="status ${claim.verificationStatus}">${statusLabel(claim.verificationStatus)}</span><b>${escapeHtml(claim.id)}</b> · ${escapeHtml(claim.policyRef)}${claim.days === undefined ? '' : ` · ${claim.days} días`}</li>`).join('')}</ul>` : '<p class="empty">No hay claims para mostrar.</p>'}</article></section>
-<section class="evidence"><h2>Evidencia extraída</h2><pre>${renderEvidence(record)}</pre></section>
+<section class="review-grid"><article><h2>Hallazgos</h2>${record.findings.length ? record.findings.map((finding) => { const policy = record.applicablePolicySections.find((section) => section.id === finding.policyRef); return `<button class="finding" data-span="${finding.spanId}" type="button" aria-controls="evidence-record" aria-pressed="false"><strong>${escapeHtml(finding.type)}</strong><span>${escapeHtml(finding.severity)} · ${escapeHtml(policy?.source ?? finding.policyRef)}</span><q>${escapeHtml(policy?.text ?? '')}</q></button>`; }).join('') : '<p class="empty">No se emitieron hallazgos para las políticas aplicables.</p>'}</article><article><h2>Claims</h2>${claims.length ? `<ul class="claims">${claims.map((claim) => `<li><span class="status ${claim.verificationStatus}">${statusLabel(claim.verificationStatus)}</span><b>${escapeHtml(claim.id)}</b> · ${escapeHtml(claim.policyRef)}${claim.days === undefined ? '' : ` · ${claim.days} días`}</li>`).join('')}</ul>` : '<p class="empty">No hay claims para mostrar.</p>'}</article></section>
+<section class="evidence" id="evidence-record"><h2>Evidencia extraída</h2><p class="evidence-help">Seleccione un hallazgo para localizar su span en el documento.</p><pre>${renderEvidence(record)}</pre></section>
 <section class="ledger"><h2>Libro de acciones</h2>${record.actionLedger.map((entry) => `<p><b>${escapeHtml(entry.tool)}</b> · ${entry.refused ? 'rechazada por la compuerta de aprobación' : 'ejecutada'} · ${escapeHtml(JSON.stringify(entry.arguments))}</p>`).join('')}</section>
-<details class="trace"><summary>Ver rastro</summary><div class="trace-grid"><section><h2>La jaula · Reader</h2>${record.readerCalls.map((call, index) => `<article><h3>${index + 1}. ${escapeHtml(call.kind)}</h3>${call.input.policySections.length ? call.input.policySections.map((policy) => `<p class="policy-input ${policy.confidential ? 'confidential' : ''}">${policy.confidential ? '🔒 CONFIDENCIAL · ' : ''}${escapeHtml(policy.id)}<br>${escapeHtml(policy.text)}</p>`).join('') : '<p>Sin sección de política para esta llamada.</p>'}<pre>${escapeHtml(call.input.text)}</pre><p><b>Claims tipados:</b> <code>${escapeHtml(JSON.stringify(call.output))}</code></p></article>`).join('')}</section><section><h2>Planner</h2><p>Entrada exacta: registros tipados e IDs, sin texto documental.</p><pre>${json(record.plannerInput)}</pre></section></div></details>
+<details class="trace"><summary>Ver rastro</summary><div class="trace-grid"><section><h2>La jaula · Reader</h2>${record.readerCalls.map((call, index) => `<article><h3>${index + 1}. ${escapeHtml(call.kind)}</h3>${call.input.policySections.length ? call.input.policySections.map((policy) => `<p class="policy-input ${policy.confidential ? 'confidential' : ''}">${policy.confidential ? 'CONFIDENCIAL · ' : ''}${escapeHtml(policy.id)}<br>${escapeHtml(policy.text)}</p>`).join('') : '<p>Sin sección de política para esta llamada.</p>'}<pre>${escapeHtml(call.input.text)}</pre><p><b>Claims tipados:</b> <code>${escapeHtml(JSON.stringify(call.output))}</code></p></article>`).join('')}</section><section><div class="planner-record"><h2>Planner</h2><p>Entrada exacta: registros tipados e IDs, sin texto documental.</p><pre>${json(record.plannerInput)}</pre></div></section></div></details>
 ${policyLibraryView(sample)}`;
 }
 
 function policyLibraryView(sample: SampleDocument): string {
   const selected = policyDocuments.find((document) => document.documentType === sample.type) ?? policyDocuments[0]!;
-  return `<section class="policy-library" aria-labelledby="policy-library-title"><header><div><h2 id="policy-library-title">Documentos de política</h2><p>Consulte el corpus de confianza usado durante la revisión.</p></div><span>${policyDocuments.length} documentos</span></header><div class="policy-workspace"><nav class="policy-inbox" aria-label="Bandeja de documentos de política">${policyDocuments.map((document) => `<a class="policy-choice ${document.id === selected.id ? 'active' : ''}" href="/policy?policy=${encodeURIComponent(document.id)}" hx-get="/policy?policy=${encodeURIComponent(document.id)}" hx-target="#policy-preview" hx-swap="outerHTML"><strong>${escapeHtml(document.shortTitle)}</strong><small>${escapeHtml(document.description)}</small></a>`).join('')}</nav>${policyDocumentView(selected)}</div></section>`;
+  return `<section class="policy-library" aria-labelledby="policy-library-title"><header><div><h2 id="policy-library-title">Documentos de política</h2><p>Consulte el corpus de confianza usado durante la revisión.</p></div><span>${policyDocuments.length} documentos</span></header><div class="policy-workspace"><nav class="policy-inbox" aria-label="Bandeja de documentos de política">${policyDocuments.map((document) => `<a class="policy-choice ${document.id === selected.id ? 'active' : ''}" href="/policy?policy=${encodeURIComponent(document.id)}" hx-get="/policy?policy=${encodeURIComponent(document.id)}" hx-target="#policy-preview" hx-swap="outerHTML"${document.id === selected.id ? ' aria-current="true"' : ''}><strong>${escapeHtml(document.shortTitle)}</strong><small>${escapeHtml(document.description)}</small></a>`).join('')}</nav>${policyDocumentView(selected)}</div></section>`;
 }
 
 function policyDocumentView(document: PolicyDocument): string {
   const sections = policyCorpus.sections.filter((section) => section.applies_to.includes(document.documentType));
-  return `<article class="policy-preview" id="policy-preview"><header><div><p class="eyebrow">Documento de política</p><h2>${escapeHtml(document.title)}</h2><p>${escapeHtml(document.description)}</p></div><a href="/${document.file}" download>Descargar fuente YAML</a></header><div class="policy-sections">${sections.map((section) => `<section class="policy-section"><div class="policy-section-heading"><h3>${escapeHtml(section.id)}</h3><span>${section.confidential ? '🔒 CONFIDENCIAL' : 'PÚBLICO'}</span></div><p class="policy-source">${escapeHtml(section.source)}</p><p>${escapeHtml(section.text)}</p>${section.high_risk_jurisdictions ? `<div class="jurisdiction-list"><strong>Jurisdicciones de alto riesgo</strong><ul>${section.high_risk_jurisdictions.map((entry) => `<li>${escapeHtml(entry.jurisdiction)} <small>${escapeHtml(entry.aliases.join(' · '))}</small></li>`).join('')}</ul></div>` : ''}</section>`).join('')}</div></article>`;
+  return `<article class="policy-preview" id="policy-preview"><header><div><h2>${escapeHtml(document.title)}</h2><p>${escapeHtml(document.description)}</p></div><a href="/${document.file}" download>Descargar fuente YAML</a></header><div class="policy-sections">${sections.map((section) => `<section class="policy-section"><div class="policy-section-heading"><h3>${escapeHtml(section.id)}</h3><span>${section.confidential ? 'CONFIDENCIAL' : 'PÚBLICO'}</span></div><p class="policy-source">${escapeHtml(section.source)}</p><p>${escapeHtml(section.text)}</p>${section.high_risk_jurisdictions ? `<div class="jurisdiction-list"><strong>Jurisdicciones de alto riesgo</strong><ul>${section.high_risk_jurisdictions.map((entry) => `<li>${escapeHtml(entry.jurisdiction)} <small>${escapeHtml(entry.aliases.join(' · '))}</small></li>`).join('')}</ul></div>` : ''}</section>`).join('')}</div></article>`;
 }
 
 function renderEvidence(record: ReviewRecord): string {
@@ -280,14 +353,14 @@ function renderEvidence(record: ReviewRecord): string {
   let html = '';
   for (const span of spans) {
     html += escapeHtml(record.document.extractedText.slice(cursor, span.start));
-    html += `<mark data-evidence="${span.id}">${escapeHtml(record.document.extractedText.slice(span.start, span.end))}</mark>`;
+    html += `<mark data-evidence="${span.id}" tabindex="-1">${escapeHtml(record.document.extractedText.slice(span.start, span.end))}</mark>`;
     cursor = span.end;
   }
   return html + escapeHtml(record.document.extractedText.slice(cursor));
 }
 
 function statusLabel(status: string): string {
-  return ({ verified: '✅ verificado en el texto', corrected: '⚠️ corregido', unverified: '❓ no verificado', missing: '⛔ faltante' } as Record<string, string>)[status] ?? status;
+  return ({ verified: 'Verificado en el texto', corrected: 'Corregido', unverified: 'No verificado', missing: 'Faltante' } as Record<string, string>)[status] ?? status;
 }
 
 function outcomeLabel(outcome: ReviewRecord['outcome']): string {
@@ -388,7 +461,7 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     response.end(job.record
       ? `<section class="review-slot">${reviewView(job.record, sample)}</section>`
-      : `<section class="review-slot" hx-get="/review?doc=${encodeURIComponent(sample.id)}" hx-trigger="every 900ms" hx-swap="outerHTML"><div class="progress"><span></span><p>Reader local: clasificando fragmentos con gramática y sin herramientas…</p></div></section>`);
+      : `<section class="review-slot" aria-busy="true" hx-get="/review?doc=${encodeURIComponent(sample.id)}" hx-trigger="every 900ms" hx-swap="outerHTML"><div class="progress" role="status" aria-live="polite"><span aria-hidden="true"></span><p>Reader local: clasificando fragmentos con gramática y sin herramientas…</p><small>El Planner aún no recibe el registro tipado.</small></div></section>`);
     return;
   }
   if (url.pathname === '/policy') {
@@ -396,6 +469,16 @@ const server = createServer(async (request, response) => {
     if (!document) { response.writeHead(404); response.end('Documento de política no encontrado.'); return; }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     response.end(policyDocumentView(document));
+    return;
+  }
+  if (url.pathname.startsWith('/assets/fonts/')) {
+    const assetsDirectory = path.join(root, 'assets', 'fonts');
+    const file = path.resolve(root, url.pathname.slice(1));
+    if (!file.startsWith(`${assetsDirectory}${path.sep}`)) { response.writeHead(403); response.end(); return; }
+    try {
+      response.writeHead(200, { 'content-type': 'font/ttf', 'cache-control': 'public, max-age=31536000, immutable' });
+      response.end(await readFile(file));
+    } catch { response.writeHead(404); response.end(); }
     return;
   }
   if (url.pathname.startsWith('/corpus/')) {
@@ -420,23 +503,13 @@ const server = createServer(async (request, response) => {
     } catch { response.writeHead(404); response.end(); }
     return;
   }
-  const step = url.searchParams.get('step') ?? 'documento';
+  const requestedStep = url.searchParams.get('step');
+  const step = requestedStep === 'expediente' || requestedStep === 'duelo' ? requestedStep : 'documento';
   response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
   response.end(page(sample, step, await containmentProof(), step === 'duelo' && url.searchParams.has('start'), duelRuns(url.searchParams.get('runs'))));
 });
 
-const styles = `
-:root { color-scheme: light; --ink:#101820; --paper:#f4f1e8; --canvas:#e7e2d7; --blue:#135cbe; --orange:#c34a1d; --line:#a8a396; --muted:#5d625e; font-family:'Barlow Condensed', sans-serif; }
-* { box-sizing:border-box; } body { margin:0; background:var(--canvas); color:var(--ink); } button, a { font:inherit; } a { color:inherit; } ::selection { background:var(--blue); color:white; } :focus-visible { outline:3px solid var(--orange); outline-offset:3px; }
-.topbar { min-height:58px; display:flex; align-items:center; gap:24px; padding:0 26px; color:var(--paper); background:var(--ink); border-bottom:4px solid var(--blue); } .wordmark { font-stretch:condensed; font-weight:900; letter-spacing:.08em; text-decoration:none; } .topbar p { margin:0; font-size:13px; color:#d9d6ca; } .containment { margin-left:auto; padding:7px 10px; color:var(--ink); background:#d9d6ca; border:0; cursor:pointer; font-size:12px; font-weight:700; } .proofs { padding:12px 26px; color:var(--paper); background:#26323a; } .proofs p { margin:5px 0 0; font-size:13px; } .proofs code { color:#fff; }
-.shell { display:grid; grid-template-columns:246px minmax(0, 1fr); min-height:calc(100vh - 58px); } .bandeja { padding:24px 18px; background:#d5d0c5; border-right:1px solid var(--line); } h1,h2,h3,p { margin-top:0; } .bandeja h2 { margin-bottom:4px; font-size:20px; } .label { margin-bottom:20px; color:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase; } .bandeja nav { display:grid; gap:7px; } .document-choice { display:grid; gap:3px; padding:12px; border:1px solid transparent; text-decoration:none; background:#e1dcd2; } .document-choice:hover, .document-choice.active { border-color:var(--ink); background:var(--paper); } .document-choice span { font-weight:700; } .document-choice small { color:var(--muted); font-size:11px; } .text-button { width:100%; margin-top:24px; padding:10px; background:transparent; border:1px solid var(--ink); cursor:pointer; text-align:left; }
-main { min-width:0; padding:26px clamp(20px, 4vw, 58px); } .stepbar { display:flex; justify-content:space-between; align-items:start; gap:24px; margin-bottom:36px; border-bottom:1px solid var(--line); } .steps { display:flex; gap:0; } .steps a { padding:11px 16px; text-decoration:none; color:var(--muted); font-weight:700; } .steps a.active { color:var(--ink); background:var(--paper); border:1px solid var(--line); border-bottom-color:var(--paper); margin-bottom:-1px; } .document-heading,.expediente-heading { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:20px; } h1 { margin-bottom:5px; font-size:clamp(28px,4vw,48px); letter-spacing:-.04em; } .document-heading p,.expediente-heading p { margin:0; color:var(--muted); } .button { display:inline-block; padding:11px 15px; color:white; background:var(--blue); border:0; text-decoration:none; font-weight:700; white-space:nowrap; cursor:pointer; }
-.document-grid { display:grid; grid-template-columns:minmax(280px,1fr) minmax(300px,1fr); border:1px solid var(--ink); background:var(--paper); } .document-grid article { min-width:0; } .document-grid article + article { border-left:1px solid var(--ink); } .document-grid h2,.review-grid h2,.evidence h2,.ledger h2,.trace h2 { margin:0; padding:12px 14px; font-size:15px; border-bottom:1px solid var(--line); } iframe { display:block; width:100%; height:520px; border:0; background:white; } pre { margin:0; padding:16px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; } .extract-panel pre { height:520px; } .injection-mark { background:#ffbf47; padding:1px 2px; } .injection-panel { margin-top:18px; padding:18px; border:1px solid var(--line); background:#eeebe3; } .injection-panel.hostile { border-color:var(--orange); background:#f8dfcc; } .injection-panel h2 { font-size:16px; } textarea { display:block; width:100%; min-height:85px; padding:12px; color:var(--ink); background:var(--paper); border:1px solid var(--ink); resize:vertical; font:12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; } .injection-panel p { margin:10px 0 0; font-size:13px; }
-.pager { display:flex; justify-content:flex-end; gap:18px; padding:11px 0; } .pager a { color:var(--blue); font-weight:700; text-underline-offset:4px; } .duel-intro,.duel-slot { max-width:1040px; } .duel-intro { display:flex; justify-content:space-between; gap:28px; align-items:end; padding:24px; background:var(--paper); border:1px solid var(--ink); } .duel-intro p,.duel-heading p { max-width:62ch; margin:0; color:var(--muted); } .duel-intro form { min-width:230px; } .duel-intro label { display:block; margin-bottom:6px; font-weight:700; font-size:13px; } .duel-intro form > div { display:flex; } .duel-intro input { width:64px; padding:10px; color:var(--ink); background:var(--canvas); border:1px solid var(--ink); border-right:0; font:700 15px 'Barlow Condensed',sans-serif; } .duel-heading { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:18px; } .duel-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; } .duel-path { background:var(--paper); border:1px solid var(--ink); } .duel-path.contained { background:#e4edf8; } .duel-path h2 { margin:0; padding:13px 15px; font-size:20px; border-bottom:1px solid var(--ink); } .duel-path dl { display:grid; grid-template-columns:repeat(3,1fr); margin:0; } .duel-path dl div { padding:14px; border-right:1px solid var(--line); } .duel-path dl div:last-child { border-right:0; } .duel-path dt { color:var(--muted); font-size:12px; } .duel-path dd { margin:2px 0 0; font-size:30px; line-height:1; font-weight:800; font-variant-numeric:tabular-nums; } .obedience { margin:14px 0 0; padding:14px 16px; background:#f8dfcc; border:1px solid var(--orange); font-size:15px; } .duel-ledgers { margin-top:18px; background:var(--paper); border:1px solid var(--line); } .duel-ledgers h2 { margin:0; padding:13px 15px 3px; font-size:18px; } .duel-ledgers > p { margin:0; padding:0 15px 13px; color:var(--muted); font-size:13px; } .duel-ledger { border-top:1px solid var(--line); } .duel-ledger summary { padding:13px 15px; cursor:pointer; font-weight:800; } .duel-ledger ol,.duel-ledger p { margin:0; padding:0 15px 14px 34px; font-size:13px; } .duel-ledger li { padding:5px 0; } .duel-ledger code { font:12px ui-monospace, SFMono-Regular, Consolas, monospace; } .duel-error { padding:24px; color:#7d260e; background:#f8dfcc; border:1px solid var(--orange); } .progress { padding:38px; background:var(--paper); border:1px solid var(--line); } .progress span { display:block; width:100%; height:7px; background:linear-gradient(90deg,var(--blue) 0 42%,#c9c3b7 42%); animation:load 1.2s steps(2,end) infinite; } .progress p { margin:14px 0 0; font-weight:700; } @keyframes load { 50% { filter:brightness(.75); } }
-.policy-library { margin-top:18px; background:var(--paper); border:1px solid var(--line); } .policy-library > header { display:flex; justify-content:space-between; align-items:end; gap:20px; padding:16px; border-bottom:1px solid var(--line); } .policy-library > header h2 { margin:0 0 4px; } .policy-library > header p { margin:0; color:var(--muted); } .policy-library > header > span { color:var(--muted); font-size:12px; white-space:nowrap; } .policy-workspace { display:grid; grid-template-columns:minmax(190px,.38fr) minmax(0,1fr); min-height:480px; } .policy-inbox { display:flex; flex-direction:column; padding:10px; background:#e1dcd2; border-right:1px solid var(--line); } .policy-choice { display:grid; gap:4px; padding:14px; text-decoration:none; border:1px solid transparent; } .policy-choice:hover,.policy-choice.active { background:var(--paper); border-color:var(--ink); } .policy-choice small { color:var(--muted); } .policy-preview { min-width:0; } .policy-preview > header { display:flex; justify-content:space-between; gap:20px; align-items:start; padding:20px; border-bottom:1px solid var(--line); } .policy-preview > header h2 { margin:0 0 4px; } .policy-preview > header p { margin:0; color:var(--muted); } .policy-preview > header a { color:var(--blue); font-weight:700; white-space:nowrap; } .policy-preview .eyebrow { margin-bottom:5px; font-size:11px; letter-spacing:.07em; text-transform:uppercase; } .policy-sections { padding:20px; } .policy-section { padding:18px; background:#fff; border:1px solid var(--line); } .policy-section + .policy-section { margin-top:14px; } .policy-section-heading { display:flex; justify-content:space-between; gap:12px; align-items:center; } .policy-section-heading h3 { margin:0; } .policy-section-heading span { font-size:11px; font-weight:700; } .policy-source { color:var(--muted); font-size:12px; } .jurisdiction-list { padding:12px; background:#f8dfcc; } .jurisdiction-list ul { margin-bottom:0; } .jurisdiction-list small { color:var(--muted); }
-.outcome { display:flex; gap:15px; align-items:baseline; padding:17px; margin-bottom:18px; color:#fff; background:var(--ink); } .outcome strong { color:#ffbf47; } .outcome p { margin:0; } .review-grid { display:grid; grid-template-columns:1.1fr .9fr; gap:18px; } .review-grid > article,.evidence,.ledger,.trace { background:var(--paper); border:1px solid var(--line); } .finding { display:grid; gap:6px; width:100%; padding:15px; color:var(--ink); background:transparent; border:0; border-bottom:1px solid var(--line); cursor:pointer; text-align:left; } .finding:hover { background:#dce9fa; } .finding span { color:var(--muted); font-size:12px; } .finding q { color:#333; font-size:13px; } .empty { padding:16px; color:var(--muted); } .claims { margin:0; padding:0; list-style:none; } .claims li { padding:14px; border-bottom:1px solid var(--line); font-size:13px; } .status { display:block; margin-bottom:4px; font-size:12px; font-weight:700; } .status.verified { color:#276944; } .status.corrected,.status.unverified,.status.missing { color:#9b3511; } .evidence,.ledger,.trace { margin-top:18px; } .evidence mark { background:#ffbf47; transition:background .2s, outline .2s; } .evidence mark.selected { background:#f18b57; outline:3px solid var(--orange); } .ledger p { margin:0; padding:12px 14px; border-bottom:1px solid var(--line); font-size:13px; } .trace { padding:0; } .trace summary { padding:15px; cursor:pointer; font-weight:800; } .trace-grid { display:grid; grid-template-columns:1fr 1fr; border-top:1px solid var(--line); } .trace-grid > section + section { border-left:1px solid var(--line); } .trace article { padding:14px; border-bottom:1px solid var(--line); } .trace h3 { font-size:13px; } .trace p { font-size:12px; } .policy-input { padding:10px; background:#e5e1d8; } .policy-input.confidential { color:white; background:#5c2e36; } .trace code { font-size:11px; }
-@media (max-width: 760px) { .topbar { align-items:flex-start; flex-wrap:wrap; gap:8px; padding:14px 18px; } .topbar p { width:100%; order:3; } .containment { margin-left:0; } .shell { display:block; } .bandeja { border-right:0; border-bottom:1px solid var(--line); } .bandeja nav { grid-template-columns:1fr 1fr; } .text-button { margin-top:12px; } main { padding:18px; } .stepbar { align-items:stretch; flex-direction:column; gap:0; } .steps { width:100%; overflow:auto; } .steps a { white-space:nowrap; padding:10px; } .pager { justify-content:flex-end; width:100%; } .document-heading,.expediente-heading,.duel-heading,.duel-intro { align-items:start; flex-direction:column; } .duel-intro form { width:100%; } .duel-grid { grid-template-columns:1fr; } .document-grid,.review-grid,.trace-grid,.policy-workspace { grid-template-columns:1fr; } .policy-inbox { border-right:0; border-bottom:1px solid var(--line); } .policy-preview > header { flex-direction:column; } .document-grid article + article,.trace-grid > section + section { border-left:0; border-top:1px solid var(--line); } iframe,.extract-panel pre { height:360px; } }
-`;
+const styles = await readFile(path.join(root, 'src/web.css'), 'utf8');
 
 await cacheTexts();
 const policyCorpus = await loadCorpus(path.join(root, 'corpus'));

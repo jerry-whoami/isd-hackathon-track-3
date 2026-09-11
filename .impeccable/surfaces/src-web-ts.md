@@ -12,14 +12,14 @@ Mode: Operate.
 
 ## Direction contract
 
-THESIS: A contained review is a visible boundary between document evidence and the decision record, refusing a generic dashboard of cards.
+THESIS: A contained review becomes an observatory for evidence, where hostile signal, trusted reference, and consequential action remain visibly separated; it refuses the interchangeable compliance dashboard of floating cards.
 
-OWN-WORLD: The surface is a controlled evidence table: mineral white document paper, ink-black structural rails, cobalt evidence marks, restrained danger orange, and square data fields with a single condensed operational face.
+OWN-WORLD: Mineral-white paper sits inside ink-black instrument rails, with cobalt locating evidence and danger orange reserved for hostile material. Square panels, numbered specimens, ruled metadata, dense tabular fields, and a condensed operational face make every region read like calibrated equipment.
 
-STORY: A reviewer selects a supplied document, compares the PDF with its extracted text, then sees the review record, evidence, typed claims, outcome and trace without treating model prose as evidence.
+STORY: A reviewer chooses a fixed specimen, compares the human document with the machine extraction, inspects typed claims and findings, follows pointers to exact evidence, audits the trace, and consults the trusted policy corpus without mistaking model output for fact.
 
-FIRST VIEWPORT: A black header anchors the containment badge. A fixed left bandeja lists the four document types. The main pane begins with the two aligned document surfaces and an explicit injection panel; the evidence column is the primary action and clicking a finding maps back to a highlighted span.
+FIRST VIEWPORT: A black masthead carries the Faraday mark and containment proof. A dark specimen rail fixes the four documents at left. Across the main field, step state and top-right previous/next navigation lead directly into two equal document surfaces, with the hostile instruction isolated below as an unmistakable signal strip.
 
-FORM: Controlled evidence table, fourth grounded direction, seed key 43620413. Signature interaction: selecting a finding shifts the evidence highlight to its exact source span and scrolls it into view.
+FORM: Seismic observatory control desk, fifth grounded direction, seed key 3b915bd6. Signature interaction: selecting a finding makes its exact source span flare in cobalt and scrolls the evidence record into position while provenance stays visible.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

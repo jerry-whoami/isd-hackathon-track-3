@@ -221,7 +221,7 @@ models/
 *.gguf
 
 # Node dependencies (the QVAC SDK alone is ~4.9 GB)
-node_modules/
+node_modules
 
 # Throwaway spike experiments (kept locally, never committed)
 spike/

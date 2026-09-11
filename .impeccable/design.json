@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-11T02:26:53-05:00",
+  "title": "Design System: Faraday",
+  "extensions": {
+    "colorMeta": {
+      "cobalt": { "role": "primary", "displayName": "Cobalt", "canonical": "#174fa6", "tonalRamp": ["#07101e", "#0b2446", "#10366f", "#174fa6", "#4e78ba", "#84a1cf", "#bdcee5", "#edf3fa"] },
+      "cobalt-deep": { "role": "primary", "displayName": "Deep Cobalt", "canonical": "#10366f", "tonalRamp": ["#07101e", "#0b2446", "#10366f", "#174fa6", "#4e78ba", "#84a1cf", "#bdcee5", "#edf3fa"] },
+      "cobalt-pale": { "role": "primary", "displayName": "Pale Cobalt", "canonical": "#dbe5f4", "tonalRamp": ["#07101e", "#0b2446", "#10366f", "#174fa6", "#4e78ba", "#84a1cf", "#dbe5f4", "#edf3fa"] },
+      "instrument-ink": { "role": "neutral", "displayName": "Instrument Ink", "canonical": "#101719", "tonalRamp": ["#101719", "#252d2f", "#444d4f", "#677071", "#8c9493", "#b2b8b5", "#d9dcd7", "#f4f5ef"] },
+      "instrument-rail": { "role": "neutral", "displayName": "Instrument Rail", "canonical": "#172226", "tonalRamp": ["#0c1214", "#172226", "#2f3d40", "#526063", "#778386", "#9da7a7", "#c7cdca", "#f1f3ef"] },
+      "rail-raised": { "role": "neutral", "displayName": "Raised Rail", "canonical": "#223136", "tonalRamp": ["#0c1214", "#172226", "#223136", "#526063", "#778386", "#9da7a7", "#c7cdca", "#f1f3ef"] },
+      "mineral-paper": { "role": "neutral", "displayName": "Mineral Paper", "canonical": "#f4f2e9", "tonalRamp": ["#25241f", "#45433b", "#68665d", "#8e8b80", "#b4b1a6", "#d8d5cb", "#f4f2e9", "#fffef8"] },
+      "bright-paper": { "role": "neutral", "displayName": "Bright Paper", "canonical": "#fffef8", "tonalRamp": ["#25241f", "#45433b", "#68665d", "#8e8b80", "#b4b1a6", "#d8d5cb", "#f4f2e9", "#fffef8"] },
+      "work-canvas": { "role": "neutral", "displayName": "Work Canvas", "canonical": "#dcded8", "tonalRamp": ["#202320", "#3e423e", "#606560", "#858a84", "#abb0aa", "#ced1cb", "#dcded8", "#f5f6f1"] },
+      "danger-orange": { "role": "secondary", "displayName": "Danger Orange", "canonical": "#b9431d", "tonalRamp": ["#2a0c04", "#5a1908", "#7c2a10", "#b9431d", "#d8734f", "#e7a58d", "#f0d8ca", "#fbf1ec"] },
+      "danger-deep": { "role": "secondary", "displayName": "Deep Danger", "canonical": "#7c2a10", "tonalRamp": ["#2a0c04", "#5a1908", "#7c2a10", "#b9431d", "#d8734f", "#e7a58d", "#f0d8ca", "#fbf1ec"] },
+      "danger-pale": { "role": "secondary", "displayName": "Pale Danger", "canonical": "#f0d8ca", "tonalRamp": ["#2a0c04", "#5a1908", "#7c2a10", "#b9431d", "#d8734f", "#e7a58d", "#f0d8ca", "#fbf1ec"] },
+      "evidence-yellow": { "role": "tertiary", "displayName": "Evidence Yellow", "canonical": "#f0c84a", "tonalRamp": ["#2b2202", "#5a4806", "#876e12", "#b99a25", "#f0c84a", "#f5d879", "#fae9ad", "#fff8df"] },
+      "verified-green": { "role": "tertiary", "displayName": "Verified Green", "canonical": "#1b6048", "tonalRamp": ["#061a12", "#0d3526", "#1b6048", "#39836a", "#67a58e", "#9bc7b5", "#cce4d9", "#eef7f2"] },
+      "rule": { "role": "neutral", "displayName": "Structural Rule", "canonical": "#9ca5a2", "tonalRamp": ["#1c2221", "#39403f", "#59615f", "#7a8380", "#9ca5a2", "#bbc2be", "#dce0dc", "#f5f6f2"] },
+      "rule-soft": { "role": "neutral", "displayName": "Soft Rule", "canonical": "#c6cbc6", "tonalRamp": ["#1c2221", "#39403f", "#59615f", "#7a8380", "#9ca5a2", "#c6cbc6", "#dce0dc", "#f5f6f2"] },
+      "muted-ink": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#4e5a5c", "tonalRamp": ["#101719", "#263033", "#4e5a5c", "#727e7f", "#98a2a1", "#bdc5c2", "#dce0dc", "#f5f6f2"] },
+      "rail-muted": { "role": "neutral", "displayName": "Rail Muted", "canonical": "#b8c3c2", "tonalRamp": ["#101719", "#263033", "#4e5a5c", "#727e7f", "#98a2a1", "#b8c3c2", "#dce0dc", "#f5f6f2"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Operational Display", "purpose": "Active document and workflow stage names." },
+      "title": { "displayName": "Instrument Title", "purpose": "Rails, document surfaces, and policy records." },
+      "body": { "displayName": "Operational Body", "purpose": "Review explanations and policy prose." },
+      "label": { "displayName": "Measured Label", "purpose": "Metadata, state, specimen numbers, and compact controls." }
+    },
+    "shadows": [
+      { "name": "paper-lift", "value": "0 14px 32px rgba(16, 23, 25, 0.11)", "purpose": "Lift a complete paper workspace from the canvas." },
+      { "name": "evidence-flare", "value": "0 4px 18px rgba(23, 79, 166, 0.35)", "purpose": "Identify the exact selected source span." }
+    ],
+    "motion": [
+      { "name": "scan", "value": "1.35s cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Move the indeterminate local-review signal through its instrument track." },
+      { "name": "evidence-state", "value": "180ms ease-out", "purpose": "Change source evidence between located and selected states." }
+    ],
+    "breakpoints": [
+      { "name": "compact-desktop", "value": "1040px" },
+      { "name": "stacked-workspace", "value": "820px" },
+      { "name": "mobile", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The direct action used to open, run, retry, or regenerate a record.",
+      "html": "<button class=\"ds-button-primary\">Abrir expediente</button>",
+      "css": ".ds-button-primary { min-height: 44px; padding: 10px 17px; color: var(--paper-bright); background: var(--blue); border: 1px solid var(--blue); border-radius: 0; font: 800 1rem/1.2 'Faraday Sans', 'Arial Narrow', sans-serif; cursor: pointer; } .ds-button-primary:hover { background: var(--blue-dark); border-color: var(--blue-dark); } .ds-button-primary:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; } .ds-button-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Outline Rail Button",
+      "kind": "button",
+      "description": "A secondary session action on the dark specimen rail.",
+      "html": "<button class=\"ds-button-rail\">Reiniciar sesión</button>",
+      "css": ".ds-button-rail { padding: 10px 12px; color: #d8e0de; background: transparent; border: 1px solid #667573; border-radius: 0; font: 400 1rem/1.2 'Faraday Sans', 'Arial Narrow', sans-serif; cursor: pointer; } .ds-button-rail:hover { color: white; background: var(--rail-raised); border-color: #a9b6b3; } .ds-button-rail:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }"
+    },
+    {
+      "name": "Instrument Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "A literal text or numeric field with paper fill and structural stroke.",
+      "html": "<label class=\"ds-field-label\">Ejecuciones por ruta<input class=\"ds-field\" value=\"10\"></label>",
+      "css": ".ds-field-label { display: grid; gap: 8px; color: var(--ink); font: 800 0.8rem/1.2 'Faraday Sans', 'Arial Narrow', sans-serif; } .ds-field { min-height: 44px; padding: 9px 11px; color: var(--ink); background: var(--paper-bright); border: 1px solid #66716f; border-radius: 0; font: inherit; } .ds-field:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; } .ds-field:disabled { color: #6d7776; background: #c8ccc7; cursor: not-allowed; }"
+    },
+    {
+      "name": "Active Workflow Step",
+      "kind": "nav",
+      "description": "A numbered cobalt station in the three-stage review path.",
+      "html": "<a class=\"ds-step\" href=\"#\" aria-current=\"step\"><span>2</span>Expediente</a>",
+      "css": ".ds-step { min-height: 65px; display: inline-flex; align-items: center; gap: 10px; padding: 0 15px; color: var(--paper-bright); background: var(--blue); font: 600 1rem/1.2 'Faraday Sans', 'Arial Narrow', sans-serif; text-decoration: none; } .ds-step span { width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid currentColor; font-size: 0.7rem; } .ds-step:hover { background: var(--blue-dark); } .ds-step:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }"
+    },
+    {
+      "name": "Specimen Choice",
+      "kind": "nav",
+      "description": "A numbered document row with a mineral-paper selected state.",
+      "html": "<a class=\"ds-specimen\" href=\"#\" aria-current=\"page\"><b>01</b><span>Propuesta hostil</span><small>Propuesta</small></a>",
+      "css": ".ds-specimen { width: 230px; min-height: 67px; display: grid; grid-template-columns: 28px 1fr; grid-template-rows: auto auto; gap: 3px 9px; padding: 11px 12px; color: var(--ink); background: var(--paper); border: 1px solid var(--paper); text-decoration: none; font-family: 'Faraday Sans', 'Arial Narrow', sans-serif; } .ds-specimen b { grid-row: 1 / 3; color: var(--muted); font-size: 0.72rem; } .ds-specimen span { align-self: end; font-weight: 800; } .ds-specimen small { color: var(--muted); font-size: 0.72rem; } .ds-specimen:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }"
+    },
+    {
+      "name": "Verified Status",
+      "kind": "chip",
+      "refersTo": "status-verified",
+      "description": "A square uppercase record state with explicit text.",
+      "html": "<span class=\"ds-status\">Verificado en el texto</span>",
+      "css": ".ds-status { width: fit-content; display: inline-block; padding: 2px 7px; color: white; background: var(--green); border-radius: 0; font: 800 0.7rem/1.3 'Faraday Sans', 'Arial Narrow', sans-serif; letter-spacing: 0.035em; text-transform: uppercase; }"
+    },
+    {
+      "name": "Evidence Finding",
+      "kind": "custom",
+      "description": "A full-width source-linked finding with a cobalt pressed state.",
+      "html": "<button class=\"ds-finding\" type=\"button\" aria-pressed=\"true\"><strong>PAYMENT_TERMS_CONFLICT</strong><span>HIGH · PLG-4.1</span><q>La Entidad pagará dentro de los treinta días.</q></button>",
+      "css": ".ds-finding { width: 100%; display: grid; grid-template-columns: minmax(130px, .34fr) 1fr; gap: 4px 16px; padding: 17px 18px; color: white; background: var(--blue); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; text-align: left; font-family: 'Faraday Sans', 'Arial Narrow', sans-serif; cursor: pointer; } .ds-finding strong { grid-row: 1 / 3; overflow-wrap: anywhere; } .ds-finding span, .ds-finding q { color: #e1ebf8; } .ds-finding:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Observatorio de evidencia",
+    "overview": "Faraday looks like calibrated review equipment rather than a generic compliance dashboard. Mineral-white reading surfaces sit inside dark instrument rails, while ruled fields preserve the visible boundary between hostile evidence, trusted policy, and consequential action. The system is dense but never cryptic: every active state, source, and status must remain legible during a short operational review.",
+    "keyCharacteristics": [
+      "Square, ruled surfaces with no decorative rounding.",
+      "Cobalt for location, navigation, and selected evidence.",
+      "Danger orange only for hostile content, consequential risk, and errors.",
+      "Condensed operational typography paired with monospace evidence records.",
+      "Persistent provenance and explicit boundaries between Reader, Planner, and policy corpus."
+    ],
+    "rules": [
+      { "name": "The Signal Separation Rule", "body": "Cobalt means location or selection, orange means danger or failure, and the two never exchange roles.", "section": "colors" },
+      { "name": "The Literal Data Rule", "body": "Reserve monospace for source text, structured output, arguments, and measurements; interface labels remain condensed sans.", "section": "typography" },
+      { "name": "The Joined Surface Rule", "body": "Related records share one ruled container; do not scatter them into floating cards.", "section": "layout" },
+      { "name": "The Paper First Rule", "body": "Add shadow only when a whole paper workspace must separate from the canvas, never to decorate individual rows.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do preserve visible separation between hostile document text, trusted policy, and Planner-safe records.",
+      "Do use joined ruled grids for comparisons and dense evidence.",
+      "Do keep every interactive state understandable without relying on color alone.",
+      "Do keep top-right workflow navigation and a visible mobile equivalent.",
+      "Do honor reduced motion and maintain keyboard focus through dynamic updates."
+    ],
+    "donts": [
+      "Don't use rounded dashboard cards, ornamental gradients, glass effects, or decorative icon tiles.",
+      "Don't use danger orange for ordinary navigation or selection.",
+      "Don't use monospace as a general interface costume.",
+      "Don't hide policy provenance, evidence anchors, or the Reader and Planner boundary.",
+      "Don't replace semantic controls with glyph-only interactions."
+    ]
+  }
+}
