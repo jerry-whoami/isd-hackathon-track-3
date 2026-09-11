@@ -11,7 +11,7 @@ export type GrammarRequest = {
 };
 
 export type ToolRequest = {
-  kind: 'Planner';
+  kind: 'Planner' | 'Naive';
   messages: Message[];
   tools: ToolDefinition[];
 };
