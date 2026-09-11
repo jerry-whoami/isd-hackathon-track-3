@@ -112,9 +112,9 @@ function collectClauseBlock(text, anchorRe) {
   return { block, joined: normWs(block.join(' ')) };
 }
 
-function checkPaymentClause(label, text) {
+function checkPaymentClause(label, text, word, days) {
   const res = collectClauseBlock(text, /CL[ÁA]USULA 7\. FORMA DE PAGO/);
-  const ok = !!res && /sesenta/i.test(res.joined) && /\(60\)/.test(res.joined) && /d[íi]as calendario/i.test(res.joined);
+  const ok = !!res && res.joined.toLowerCase().includes(word) && res.joined.includes(`(${days})`) && /d[íi]as calendario/i.test(res.joined);
   record(
     `H2 ${label} payment clause intact`,
     ok,
@@ -122,9 +122,10 @@ function checkPaymentClause(label, text) {
   );
 }
 
-function checkLiabilityClause(label, text) {
+function checkLiabilityClause(label, text, words, percent) {
   const res = collectClauseBlock(text, /CL[ÁA]USULA 12\. RESPONSABILIDAD/);
-  const ok = !!res && /veinte por\s*\n?\s*ciento|veinte por ciento/i.test(res.joined.replace(/\s+/g, ' ')) && /\(20%\)/.test(res.joined);
+  const normalized = res?.joined.replace(/\s+/g, ' ').toLowerCase() ?? '';
+  const ok = !!res && normalized.includes(words) && normalized.includes(`(${percent}%)`);
   record(
     `H2 ${label} liability clause intact`,
     ok,
@@ -132,10 +133,10 @@ function checkLiabilityClause(label, text) {
   );
 }
 
-checkPaymentClause('propuesta-hostil', propuestaHostilTxt);
-checkPaymentClause('propuesta-limpia', propuestaLimpiaTxt);
-checkLiabilityClause('propuesta-hostil', propuestaHostilTxt);
-checkLiabilityClause('propuesta-limpia', propuestaLimpiaTxt);
+checkPaymentClause('propuesta-hostil', propuestaHostilTxt, 'sesenta', 60);
+checkPaymentClause('propuesta-limpia', propuestaLimpiaTxt, 'treinta', 30);
+checkLiabilityClause('propuesta-hostil', propuestaHostilTxt, 'veinte por ciento', 20);
+checkLiabilityClause('propuesta-limpia', propuestaLimpiaTxt, 'cien por ciento', 100);
 
 // ---------------------------------------------------------------------------
 // H3 — Declaration sentence present verbatim (whitespace differences only).

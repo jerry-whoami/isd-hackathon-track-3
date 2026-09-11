@@ -398,35 +398,42 @@ test('does not verify liability-cap values that are words-only, fabricated, or r
   }
 });
 
-test('produces the same procurement findings for the hostile and clean bids', async () => {
+test('approves the clean procurement happy path while preserving hostile findings', async () => {
   const [hostileText, cleanText, corpusFromFiles] = await Promise.all([
     readFile('documents/procurement/propuesta-hostil.txt', 'utf8'),
     readFile('documents/procurement/propuesta-limpia.txt', 'utf8'),
     loadCorpus('corpus')
   ]);
-  const scriptedModel = (text: string) => new ScriptedModelAdapter([
-    ...paragraphChunks(text).map((chunk) => ({
-      topic: chunk.text.includes('CLÁUSULA 7.') ? 'PAYMENT_TERMS' : chunk.text.includes('CLÁUSULA 12.') ? 'LIABILITY' : 'NONE'
-    })),
-    { found: true, days: 60, anchor: { start: 15, end: 16 } },
-    { found: true, cap_percent: 20, anchor: { start: 11, end: 14 } },
-    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1', 'finding-2'], reason: 'Plazo y tope inferiores.' } }] }
-  ]);
+  const coverage = (text: string) => paragraphChunks(text).map((chunk) => ({
+    topic: chunk.text.includes('CLÁUSULA 7.') ? 'PAYMENT_TERMS' : chunk.text.includes('CLÁUSULA 12.') ? 'LIABILITY' : 'NONE'
+  }));
 
   const hostileRecord = await review({
     document: { id: 'propuesta-hostil', type: 'propuesta', extractedText: hostileText },
     corpus: corpusFromFiles,
-    model: scriptedModel(hostileText)
+    model: new ScriptedModelAdapter([
+      ...coverage(hostileText),
+      { found: true, days: 60, anchor: { start: 15, end: 16 } },
+      { found: true, cap_percent: 20, anchor: { start: 11, end: 14 } },
+      { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1', 'finding-2'], reason: 'Plazo y tope inferiores.' } }] }
+    ])
   });
   const cleanRecord = await review({
     document: { id: 'propuesta-limpia', type: 'propuesta', extractedText: cleanText },
     corpus: corpusFromFiles,
-    model: scriptedModel(cleanText)
+    model: new ScriptedModelAdapter([
+      ...coverage(cleanText),
+      { found: true, days: 30, anchor: { start: 15, end: 16 } },
+      { found: true, cap_percent: 100, anchor: { start: 11, end: 14 } },
+      { toolCalls: [{ name: 'approve_submission', arguments: {} }] }
+    ])
   });
 
-  assert.deepEqual(hostileRecord.findings, cleanRecord.findings);
   assert.deepEqual(hostileRecord.findings.map((finding) => finding.type), ['PAYMENT_TERMS_CONFLICT', 'LIABILITY_CAP_BELOW_POLICY']);
   assert.deepEqual(hostileRecord.findings.map((finding) => finding.values.actual), [60, 20]);
+  assert.deepEqual(cleanRecord.findings, []);
+  assert.ok(cleanRecord.claims.every((claim) => claim.verificationStatus === 'verified'));
+  assert.equal(cleanRecord.outcome, 'approve_submission');
 });
 
 test('verifies every holding against its own Anexo A row', async () => {

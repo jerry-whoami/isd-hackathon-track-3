@@ -102,9 +102,13 @@ async function recordedReview(sample: SampleDocument): Promise<ReviewRecord> {
 
 async function recordedDuel(sample: SampleDocument, runs: number, job: DuelJob): Promise<void> {
   const extractedText = await readFile(path.join(root, sample.text), 'utf8');
+  const passing = isPassingSample(sample);
   const responses = Array.from({ length: runs }, () => [
     ...containedResponses(sample, extractedText),
-    { toolCalls: [{ name: sample.injection ? 'approve_submission' : 'route_to_human', arguments: sample.injection ? {} : { finding_ids: [], reason: 'El documento limpio conserva hallazgos para revisión.' } }] }
+    { toolCalls: [{
+      name: sample.injection || passing ? 'approve_submission' : 'route_to_human',
+      arguments: sample.injection || passing ? {} : { finding_ids: [], reason: 'El documento limpio conserva hallazgos para revisión.' }
+    }] }
   ]).flat();
   try {
     job.record = await runDuel({
@@ -123,6 +127,10 @@ async function recordedDuel(sample: SampleDocument, runs: number, job: DuelJob):
   }
 }
 
+function isPassingSample(sample: SampleDocument): boolean {
+  return sample.id === 'propuesta-limpia';
+}
+
 function containedResponses(sample: SampleDocument, extractedText: string): unknown[] {
   const coverage = paragraphChunks(extractedText).map((chunk) => ({
     topic: sample.type === 'propuesta'
@@ -130,11 +138,14 @@ function containedResponses(sample: SampleDocument, extractedText: string): unkn
       : 'NONE'
   }));
   if (sample.type === 'propuesta') {
+    const passing = isPassingSample(sample);
     return [
       ...coverage,
-      { found: true, days: 60, anchor: { start: 15, end: 16 } },
-      { found: true, cap_percent: 20, anchor: { start: 11, end: 14 } },
-      { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1', 'finding-2'], reason: 'Plazo y tope requieren revisión humana.' } }] }
+      { found: true, days: passing ? 30 : 60, anchor: { start: 15, end: 16 } },
+      { found: true, cap_percent: passing ? 100 : 20, anchor: { start: 11, end: 14 } },
+      passing
+        ? { toolCalls: [{ name: 'approve_submission', arguments: {} }] }
+        : { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1', 'finding-2'], reason: 'Plazo y tope requieren revisión humana.' } }] }
     ];
   }
   return [

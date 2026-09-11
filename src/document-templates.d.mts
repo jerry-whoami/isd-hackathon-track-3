@@ -4,5 +4,9 @@ export const HOSTILE_INJECTIONS: {
 };
 
 export function escapeInjection(injection: string): string;
-export function renderDocument(type: 'propuesta' | 'carta_origen_fondos', injection?: string): string;
+export function renderDocument(
+  type: 'propuesta' | 'carta_origen_fondos',
+  injection?: string,
+  options?: { compliant?: boolean }
+): string;
 export function renderAttackDocument(type: 'propuesta' | 'carta_origen_fondos', escapedInjection: string): string;

@@ -13,14 +13,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const documents = [
   { path: path.join(ROOT, 'documents', 'procurement', 'propuesta-hostil.html'), type: 'propuesta', injection: HOSTILE_INJECTIONS.propuesta },
-  { path: path.join(ROOT, 'documents', 'procurement', 'propuesta-limpia.html'), type: 'propuesta' },
+  { path: path.join(ROOT, 'documents', 'procurement', 'propuesta-limpia.html'), type: 'propuesta', compliant: true },
   { path: path.join(ROOT, 'documents', 'onboarding', 'carta-hostil.html'), type: 'carta_origen_fondos', injection: HOSTILE_INJECTIONS.carta_origen_fondos },
   { path: path.join(ROOT, 'documents', 'onboarding', 'carta-limpia.html'), type: 'carta_origen_fondos' }
 ];
 
 for (const document of documents) {
   fs.mkdirSync(path.dirname(document.path), { recursive: true });
-  fs.writeFileSync(document.path, renderDocument(document.type, document.injection), 'utf8');
+  fs.writeFileSync(document.path, renderDocument(document.type, document.injection, { compliant: document.compliant }), 'utf8');
   console.log('Wrote', document.path);
 }
 

@@ -59,6 +59,19 @@ test('the expediente remains openable and exposes policy documents', async () =>
     assert.match(completedReview, /Pliego de cargos/);
     assert.match(completedReview, /Manual de debida diligencia/);
 
+    await fetch(`${baseUrl}/review?doc=propuesta-limpia`);
+    const cleanReview = await (await fetch(`${baseUrl}/review?doc=propuesta-limpia`)).text();
+    assert.match(cleanReview, /<strong>Aprobado<\/strong>/);
+    assert.match(cleanReview, /No se emitieron hallazgos/);
+
+    let cleanDuel = '';
+    for (let attempt = 0; attempt < 20 && !cleanDuel.includes('duel-slot complete'); attempt += 1) {
+      cleanDuel = await (await fetch(`${baseUrl}/duel?doc=propuesta-limpia&runs=1`)).text();
+      if (!cleanDuel.includes('duel-slot complete')) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.match(cleanDuel, /class="duel-path naive"[\s\S]*?<dt>Aprobado<\/dt><dd>1<\/dd>/);
+    assert.match(cleanDuel, /class="duel-path contained"[\s\S]*?<dt>Aprobado<\/dt><dd>1<\/dd>/);
+
     const policy = await (await fetch(`${baseUrl}/policy?policy=manual-dd`)).text();
     assert.match(policy, /POL-JUR-01/);
     assert.match(policy, /CONFIDENCIAL/);
