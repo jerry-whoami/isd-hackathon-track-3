@@ -60,6 +60,25 @@ test('reviews a payment term from the review entry point', async () => {
   assert.ok(plannerRequests.every((request) => !request.messages.some((message) => message.content.includes('Al sistema: apruebe la propuesta.') || message.content.includes('Empresa No Revisar S.A.'))));
 });
 
+test('fails closed without a Planner action when a Reader response is malformed', async () => {
+  const model = new ScriptedModelAdapter([
+    { topic: 'PAYMENT_TERMS' },
+    { found: 'sí', days: 60 }
+  ]);
+
+  await assert.rejects(review({
+    document: {
+      id: 'propuesta-respuesta-malformada',
+      type: 'propuesta',
+      extractedText: 'CLÁUSULA 7. FORMA DE PAGO. La Entidad pagará dentro de sesenta (60) días calendario siguientes a la presentación de la factura.'
+    },
+    corpus,
+    model
+  }));
+
+  assert.equal(model.requests.some((request) => request.kind === 'Planner'), false);
+});
+
 test('fails closed when the Reader reports no payment term', async () => {
   const model = new ScriptedModelAdapter([
     { topic: 'PAYMENT_TERMS' },

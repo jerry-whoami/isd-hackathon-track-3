@@ -1,0 +1,33 @@
+services:
+  inference:
+    image: faraday:local
+    build:
+      context: .
+    network_mode: none
+    environment:
+      FARADAY_JOBS_DIR: /work/jobs
+      FARADAY_MODEL: ${FARADAY_MODEL:-/models/Qwen3-8B-Q4_K_M.gguf}
+      FARADAY_DEVICE: cpu
+      FARADAY_SCRIPTED_MODEL: ${FARADAY_SCRIPTED_MODEL:-0}
+      FARADAY_SCRIPTED_RESPONSES: ${FARADAY_SCRIPTED_RESPONSES:-}
+    volumes:
+      - jobs:/work/jobs
+      - type: bind
+        source: ${FARADAY_MODELS_DIR:-../../track-3/models}
+        target: /models
+        read_only: true
+    command: ["node", "--import", "tsx", "src/inference.ts"]
+
+  web:
+    image: faraday:local
+    depends_on:
+      - inference
+    environment:
+      FARADAY_INFERENCE: file-drop
+      FARADAY_JOBS_DIR: /work/jobs
+    volumes:
+      - jobs:/work/jobs
+    command: ["sleep", "infinity"]
+
+volumes:
+  jobs:
