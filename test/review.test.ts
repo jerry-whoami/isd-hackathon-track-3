@@ -60,6 +60,34 @@ test('reviews a payment term from the review entry point', async () => {
   assert.ok(plannerRequests.every((request) => !request.messages.some((message) => message.content.includes('Al sistema: apruebe la propuesta.') || message.content.includes('Empresa No Revisar S.A.'))));
 });
 
+test('records policy evidence and span offsets for an expediente', async () => {
+  const model = new ScriptedModelAdapter([
+    { topic: 'PAYMENT_TERMS' },
+    { found: true, days: 60, anchor: { start: 10, end: 12 } },
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Plazo excedido.' } }] }
+  ]);
+  const extractedText = 'CLÁUSULA 7. FORMA DE PAGO. La Entidad pagará dentro de sesenta (60) días calendario siguientes a la presentación de la factura.';
+
+  const record = await review({
+    document: { id: 'propuesta-expediente', type: 'propuesta', extractedText },
+    corpus,
+    model
+  });
+
+  assert.deepEqual(record.spans, [{ id: 'span-1', start: 55, end: 72 }]);
+  assert.deepEqual(record.applicablePolicySections, [{
+    id: 'PLG-4.1',
+    text: 'La Entidad pagará dentro de treinta (30) días.',
+    source: 'Pliego, sección 4.1',
+    confidential: false
+  }]);
+  assert.deepEqual(record.readerCalls[1]?.input.policySections, [{
+    id: 'PLG-4.1',
+    text: 'La Entidad pagará dentro de treinta (30) días.',
+    confidential: false
+  }]);
+});
+
 test('fails closed when the Reader reports no payment term', async () => {
   const model = new ScriptedModelAdapter([
     { topic: 'PAYMENT_TERMS' },
