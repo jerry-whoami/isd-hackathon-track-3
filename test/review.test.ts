@@ -327,6 +327,214 @@ test('produces the same procurement findings for the hostile and clean bids', as
   assert.deepEqual(hostileRecord.findings.map((finding) => finding.values.actual), [60, 20]);
 });
 
+test('verifies every holding against its own Anexo A row', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })),
+    { rows: [
+      { line: '[L1]', percent: 30 },
+      { line: '[L2]', percent: 45 },
+      { line: '[L3]', percent: 10 },
+      { line: '[L4]', percent: 15 }
+    ] },
+    { declared: '[L3]' },
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Revisión requerida.' } }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: await loadCorpus('corpus'),
+    model
+  });
+
+  assert.deepEqual(record.claims.filter((claim) => claim.kind === 'holding').map(({ partyId, percent, verificationStatus }) => ({ partyId, percent, verificationStatus })), [
+    { partyId: 'party-1', percent: 30, verificationStatus: 'verified' },
+    { partyId: 'party-2', percent: 45, verificationStatus: 'verified' },
+    { partyId: 'party-3', percent: 10, verificationStatus: 'verified' },
+    { partyId: 'party-4', percent: 15, verificationStatus: 'verified' }
+  ]);
+  assert.deepEqual(record.readerCalls.filter((call) => call.kind === 'holdings')[0]?.output, {
+    rows: [
+      { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
+      { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
+    ]
+  });
+});
+
+test('raises flat UBO_MISMATCH for Bruno Salas at POL-BF-01’s 25% threshold', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })),
+    { rows: [
+      { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
+      { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
+    ] },
+    { declared: '[L3]' },
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Revisión requerida.' } }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: await loadCorpus('corpus'),
+    model
+  });
+
+  assert.deepEqual(record.findings.filter((finding) => finding.type === 'UBO_MISMATCH'), [{
+    id: 'finding-1', type: 'UBO_MISMATCH', severity: 'HIGH', policyRef: 'POL-BF-01', partyId: 'party-1', spanId: 'span-1', values: { actual: 30, minimum: 25 }
+  }]);
+});
+
+test('fails closed on the 45% corporate shareholder with a planner-safe reason', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })),
+    { rows: [
+      { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
+      { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
+    ] },
+    { declared: '[L3]' },
+    { toolCalls: [{ name: 'approve_submission', arguments: {} }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: await loadCorpus('corpus'),
+    model
+  });
+
+  assert.ok(record.failClosedReasons.includes('party-2 es un accionista corporativo con 45%; su beneficiario final requiere revisión humana'));
+  assert.equal(record.outcome, 'route_to_human');
+  assert.deepEqual(record.actionLedger, [{ path: 'contained', tool: 'approve_submission', arguments: {}, refused: true }]);
+});
+
+test('verifies the declared beneficial owner against the declaration sentence', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })),
+    { rows: [
+      { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
+      { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
+    ] },
+    { declared: '[L3]' },
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Revisión requerida.' } }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: await loadCorpus('corpus'),
+    model
+  });
+
+  assert.deepEqual(record.claims.filter((claim) => claim.kind === 'declared-beneficial-owner').map(({ policyRef, partyId, verificationStatus }) => ({ policyRef, partyId, verificationStatus })), [
+    { policyRef: 'POL-BF-02', partyId: 'party-3', verificationStatus: 'verified' }
+  ]);
+  const declaredOwnerCall = record.readerCalls.filter((call) => call.kind === 'declared-beneficial-owner')[0];
+  assert.deepEqual(declaredOwnerCall?.output, { declared: '[L3]' });
+  assert.match(declaredOwnerCall?.input.text ?? '', /Ninguna persona natural alcanza directamente el 25%;/);
+});
+
+test('detects the four Anexo A rows from each letter before the Reader is called', async () => {
+  const expectedRows = [
+    { id: 'party-1', line: '[L1]', name: 'Bruno Salas', country: 'Panamá' },
+    { id: 'party-2', line: '[L2]', name: 'Albatros Holdings Ltd.', country: 'Tortola, Islas Vírgenes Británicas' },
+    { id: 'party-3', line: '[L3]', name: 'Ana Ríos', country: 'Panamá' },
+    { id: 'party-4', line: '[L4]', name: 'Carlos Vega', country: 'Panamá' }
+  ];
+
+  for (const documentId of ['carta-hostil', 'carta-limpia']) {
+    const extractedText = await readFile(`documents/onboarding/${documentId}.txt`, 'utf8');
+    const model = new ScriptedModelAdapter([
+      ...Array.from({ length: 14 }, () => ({ topic: 'NONE' })),
+      { rows: [
+        { line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 },
+        { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
+      ] },
+      { declared: '[L3]' },
+      { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: [], reason: 'Revisión requerida.' } }] }
+    ]);
+    const record = await review({
+      document: { id: documentId, type: 'carta_origen_fondos', extractedText },
+      corpus: await loadCorpus('corpus'),
+      model
+    });
+
+    assert.deepEqual(record.ownershipTable?.rows.map(({ id, line, name, country }) => ({ id, line, name, country })), expectedRows);
+  }
+});
+
+test('marks a holding unverified when its percentage is not in that row', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })),
+    { rows: [
+      { line: '[L1]', percent: 40 }, { line: '[L2]', percent: 45 },
+      { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }
+    ] },
+    { declared: '[L3]' },
+    { toolCalls: [{ name: 'approve_submission', arguments: {} }] }
+  ]);
+
+  const record = await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: await loadCorpus('corpus'),
+    model
+  });
+
+  assert.equal(record.claims.find((claim) => claim.partyId === 'party-1')?.verificationStatus, 'unverified');
+  assert.equal(record.outcome, 'route_to_human');
+});
+
+test('marks NINGUNO and an absent declaration missing under POL-BF-02', async () => {
+  const corpus = await loadCorpus('corpus');
+  const hostileText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const absentText = hostileText.replace(
+    'Ninguna persona natural alcanza directamente el 25%; conforme a la prueba residual, declaramos como\nbeneficiaria final a Ana Ríos, presidenta.\n\n',
+    ''
+  );
+  const holdingRows = [{ line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 }, { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }];
+
+  for (const [extractedText, responses] of [
+    [hostileText, [...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })), { rows: holdingRows }, { declared: 'NINGUNO' }, { toolCalls: [{ name: 'approve_submission', arguments: {} }] }]],
+    [absentText, [...Array.from({ length: 13 }, () => ({ topic: 'DECLARED_BO' })), { rows: holdingRows }, { toolCalls: [{ name: 'approve_submission', arguments: {} }] }]]
+  ] as const) {
+    const record = await review({
+      document: { id: 'carta-sin-declaracion', type: 'carta_origen_fondos', extractedText },
+      corpus,
+      model: new ScriptedModelAdapter([...responses])
+    });
+    const claim = record.claims.find((candidate) => candidate.kind === 'declared-beneficial-owner');
+    assert.equal(claim?.policyRef, 'POL-BF-02');
+    assert.equal(claim?.verificationStatus, 'missing');
+    assert.ok(record.failClosedReasons.includes('no se encontró una declaración de beneficiario final'));
+    assert.equal(record.outcome, 'route_to_human');
+  }
+});
+
+test('keeps Anexo A names out of the Planner and every Reader request constrained', async () => {
+  const extractedText = await readFile('documents/onboarding/carta-hostil.txt', 'utf8');
+  const model = new ScriptedModelAdapter([
+    ...Array.from({ length: 14 }, () => ({ topic: 'DECLARED_BO' })),
+    { rows: [{ line: '[L1]', percent: 30 }, { line: '[L2]', percent: 45 }, { line: '[L3]', percent: 10 }, { line: '[L4]', percent: 15 }] },
+    { declared: '[L3]' },
+    { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Revisión requerida.' } }] }
+  ]);
+
+  await review({
+    document: { id: 'carta-hostil', type: 'carta_origen_fondos', extractedText },
+    corpus: await loadCorpus('corpus'),
+    model
+  });
+
+  const planner = model.requests.filter((request) => request.kind === 'Planner');
+  assert.equal(planner.length, 1);
+  for (const name of ['Bruno Salas', 'Albatros Holdings Ltd.', 'Ana Ríos', 'Carlos Vega']) {
+    assert.ok(!planner[0]!.messages.some((message) => message.content.includes(name)));
+  }
+  const reader = model.requests.filter((request) => request.kind === 'Reader');
+  assert.ok(reader.every((request) => 'grammar' in request && !('tools' in request)));
+});
+
+
 test('fails closed when coverage steers the payment clause to NONE', async () => {
   const model = new ScriptedModelAdapter([
     { topic: 'NONE' },

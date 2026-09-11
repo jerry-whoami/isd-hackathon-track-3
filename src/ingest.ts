@@ -10,6 +10,64 @@ export async function extractPdf(pdfPath: string): Promise<string> {
 
 export type Chunk = { id: string; start: number; end: number; text: string };
 
+export type OwnershipRow = {
+  id: string;
+  line: string;
+  name: string;
+  country: string;
+  start: number;
+  end: number;
+  text: string;
+};
+
+export type OwnershipTable = { start: number; end: number; rows: OwnershipRow[] };
+
+export function ownershipTable(extractedText: string): OwnershipTable | undefined {
+  const lines = physicalLines(extractedText);
+  const annexIndex = lines.findIndex(({ text }) => /^\s*Anexo A\b/i.test(text));
+  if (annexIndex === -1) return undefined;
+  const headerIndex = lines.findIndex(({ text }, index) => index > annexIndex && /^\s*Accionista\b/i.test(text));
+  if (headerIndex === -1) return undefined;
+
+  const rows: OwnershipRow[] = [];
+  let end = lines[headerIndex]!.end;
+  for (const sourceLine of lines.slice(headerIndex + 1)) {
+    const match = /^\s*(.+?)\s{2,}(.+?)\s{2,}(\d{1,3})\s*$/.exec(sourceLine.text);
+    if (!match) {
+      if (rows.length > 0 && sourceLine.text.trim() !== '') break;
+      continue;
+    }
+    const [, name, country] = match;
+    if (!name || !country) continue;
+    const row = {
+      id: `party-${rows.length + 1}`,
+      line: `[L${rows.length + 1}]`,
+      name,
+      country,
+      start: sourceLine.start,
+      end: sourceLine.end,
+      text: sourceLine.text
+    };
+    rows.push(row);
+    end = row.end;
+  }
+  return rows.length > 0 ? { start: lines[annexIndex]!.start, end, rows } : undefined;
+}
+
+export function declaredBeneficialOwnerSentence(extractedText: string): { start: number; end: number; text: string } | undefined {
+  return paragraphChunks(extractedText).find(({ text }) => /\bbeneficiari[ao]\s+final\b/i.test(text));
+}
+
+function physicalLines(text: string): { start: number; end: number; text: string }[] {
+  const lines: { start: number; end: number; text: string }[] = [];
+  let start = 0;
+  for (const line of text.split('\n')) {
+    lines.push({ start, end: start + line.length, text: line });
+    start += line.length + 1;
+  }
+  return lines;
+}
+
 export function paragraphChunks(extractedText: string): Chunk[] {
   const chunks: Chunk[] = [];
   for (const match of extractedText.matchAll(/\S[\s\S]*?(?=\n\s*\n|$)/g)) {
