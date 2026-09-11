@@ -13,7 +13,7 @@ const responses = JSON.stringify([
   { found: true, days: 60, anchor: { start: 15, end: 17 } },
   { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1'], reason: 'Plazo excedido.' } }] }
 ]);
-writeFileSync(environmentFile, `FARADAY_SCRIPTED_MODEL=1\nFARADAY_SCRIPTED_RESPONSES='${responses}'\n`);
+writeFileSync(environmentFile, `FARADAY_SCRIPTED_MODEL=1\nFARADAY_SCRIPTED_RESPONSES='${responses}'\nFARADAY_PORT=0\n`);
 
 function compose(args, options = {}) {
   return execFileSync('docker', ['compose', '--project-name', project, '--env-file', environmentFile, ...args], {

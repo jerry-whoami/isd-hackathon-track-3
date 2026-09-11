@@ -5,7 +5,8 @@ import path from 'node:path';
 
 import { loadCorpus } from './corpus.ts';
 import { paragraphChunks } from './ingest.ts';
-import { ScriptedModelAdapter } from './model-port.ts';
+import { FileDropModelAdapter } from './file-drop.ts';
+import { ScriptedModelAdapter, type ModelPort } from './model-port.ts';
 import { runDuel, type DuelRecord } from './duel.ts';
 import { review, type ReviewRecord } from './review.ts';
 import { attackPositionForDocument, attackPositionSchema, type AttackPosition, type DocumentType } from './schemas.ts';
@@ -58,12 +59,18 @@ function selectedSample(id: string | null): SampleDocument {
   return allDocuments().find((sample) => sample.id === id) ?? samples[0]!;
 }
 
+function containedModel(scriptedResponses: unknown[]): ModelPort {
+  return process.env.FARADAY_INFERENCE === 'file-drop'
+    ? new FileDropModelAdapter()
+    : new ScriptedModelAdapter(scriptedResponses);
+}
+
 async function recordedReview(sample: SampleDocument): Promise<ReviewRecord> {
   const extractedText = await readFile(path.join(root, sample.text), 'utf8');
   return review({
     document: { id: sample.id, type: sample.type, extractedText, ...(sample.attack === undefined ? {} : { attack: sample.attack }) },
     corpus: await loadCorpus(path.join(root, 'corpus')),
-    model: new ScriptedModelAdapter(containedResponses(sample, extractedText))
+    model: containedModel(containedResponses(sample, extractedText))
   });
 }
 
@@ -77,7 +84,7 @@ async function recordedDuel(sample: SampleDocument, runs: number, job: DuelJob):
     job.record = await runDuel({
       document: { id: sample.id, type: sample.type, extractedText, ...(sample.attack === undefined ? {} : { attack: sample.attack }) },
       corpus: await loadCorpus(path.join(root, 'corpus')),
-      model: new ScriptedModelAdapter(responses),
+      model: containedModel(responses),
       runs,
       hostile: Boolean(sample.injection),
       onProgress: async (record) => {
@@ -133,12 +140,12 @@ function queryPath(sample: SampleDocument, step: string): string {
   return `/?doc=${encodeURIComponent(sample.id)}&step=${encodeURIComponent(step)}`;
 }
 
-function page(sample: SampleDocument, step: string, duelStarted = false, duelRuns = 10): string {
+function page(sample: SampleDocument, step: string, proof: string, duelStarted = false, duelRuns = 10): string {
   const main = step === 'expediente'
     ? `<section class="review-slot" hx-get="/review?doc=${encodeURIComponent(sample.id)}" hx-trigger="load, every 900ms" hx-swap="innerHTML"><div class="progress"><span></span><p>Preparando el expediente contenido…</p></div></section>`
     : step === 'duelo'
       ? duelStarted
-        ? `<section class="duel-slot" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${duelRuns}" hx-trigger="load, every 350ms" hx-swap="outerHTML"><div class="progress"><span></span><p>Iniciando las dos rutas con el modelo guionizado…</p></div></section>`
+        ? `<section class="duel-slot" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${duelRuns}" hx-trigger="load, every 350ms" hx-swap="outerHTML"><div class="progress"><span></span><p>Iniciando las dos rutas con el modelo local…</p></div></section>`
         : duelStartView(sample)
       : documentView(sample);
   return `<!doctype html>
@@ -152,8 +159,8 @@ function page(sample: SampleDocument, step: string, duelStarted = false, duelRun
 <style>${styles}</style>
 </head>
 <body>
-<header class="topbar"><a class="wordmark" href="${queryPath(sample, 'documento')}">FARADAY</a><p>Revisión contenida de documentos hostiles</p><button class="containment" type="button" aria-expanded="false" aria-controls="proofs" onclick="toggleProofs(this)">Reader: red ninguna · 100 % local · QVAC Qwen3-8B</button></header>
-<aside class="proofs" id="proofs" hidden><div><strong>Pruebas de contención</strong><p>Fuera de Compose no hay pruebas activas para mostrar. Inicie el stack en Compose para ver los intentos DNS y HTTP fallidos, <code>network_mode: none</code> y el rechazo grammar+tools (50010).</p></div></aside>
+<header class="topbar"><a class="wordmark" href="${queryPath(sample, 'documento')}">FARADAY</a><p>Revisión contenida de documentos hostiles</p><button class="containment" type="button" aria-expanded="false" aria-controls="proofs" onclick="toggleProofs(this)">Reader: red ninguna · 100 % local · QVAC ${escapeHtml(path.basename(process.env.FARADAY_MODEL ?? 'Qwen3-8B', '.gguf'))}</button></header>
+<aside class="proofs" id="proofs" hidden><div><strong>Pruebas de contención</strong><p>${proof}</p></div></aside>
 <div class="shell">
 <aside class="bandeja"><h2>Bandeja</h2><p class="label">Muestras fijadas · sin cargas</p><nav aria-label="Documentos">${allDocuments().map((item) => `<a class="document-choice ${item.id === sample.id ? 'active' : ''}" href="${queryPath(item, 'documento')}"><span>${escapeHtml(item.shortTitle)}</span><small>${escapeHtml(item.typeLabel)}</small></a>`).join('')}</nav><form action="/reset" method="post"><button class="text-button" type="submit">↺ Reiniciar</button></form></aside>
 <main>
@@ -179,7 +186,7 @@ function documentView(sample: SampleDocument): string {
 function duelView(sample: SampleDocument, job: DuelJob, runs: number): string {
   if (job.error) return `<section class="duel-slot"><div class="duel-error"><h1>③ Duelo</h1><p>No se pudo completar el duelo: ${escapeHtml(job.error)}</p><a class="button" href="${queryPath(sample, 'duelo')}">Intentar de nuevo</a></div></section>`;
   const record = job.record;
-  if (!record) return `<section class="duel-slot" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}" hx-trigger="every 350ms" hx-swap="outerHTML"><div class="progress"><span></span><p>Iniciando las dos rutas con el modelo guionizado…</p></div></section>`;
+  if (!record) return `<section class="duel-slot" hx-get="/duel?doc=${encodeURIComponent(sample.id)}&runs=${runs}" hx-trigger="every 350ms" hx-swap="outerHTML"><div class="progress"><span></span><p>Iniciando las dos rutas con el modelo local…</p></div></section>`;
   const done = record.completedRuns === record.runs;
   const rate = record.completedRuns === 0 ? 'Aún sin medición' : `${Math.round((record.naiveObedienceRate ?? 0) * 100)} % (${record.counts.naive.approve_submission}/${record.completedRuns})`;
   const measurement = sample.injection
@@ -249,6 +256,20 @@ function statusLabel(status: string): string {
 
 function outcomeLabel(outcome: ReviewRecord['outcome']): string {
   return ({ approve_submission: 'Aprobado', route_to_human: 'Enrutado a una persona', quarantine_submission: 'En cuarentena' })[outcome];
+}
+
+async function containmentProof(): Promise<string> {
+  try {
+    const proof = JSON.parse(await readFile(path.join(process.env.FARADAY_JOBS_DIR ?? '/work/jobs', 'containment-proof.json'), 'utf8')) as {
+      networkMode?: string;
+      dns?: { failed?: boolean };
+      http?: { failed?: boolean };
+      grammarPlusTools?: { rejected?: boolean; code?: number };
+    };
+    return `Desde el contenedor: DNS ${proof.dns?.failed ? 'falló' : 'no falló'}, HTTP ${proof.http?.failed ? 'falló' : 'no falló'}, <code>network_mode: ${escapeHtml(proof.networkMode ?? 'desconocido')}</code> y grammar+tools ${proof.grammarPlusTools?.rejected ? 'rechazado' : 'no rechazado'} (código ${proof.grammarPlusTools?.code ?? 'desconocido'}).`;
+  } catch {
+    return 'Fuera de Compose no hay pruebas activas para mostrar. Inicie el stack en Compose para ver los intentos DNS y HTTP fallidos, <code>network_mode: none</code> y el rechazo grammar+tools (50010).';
+  }
 }
 
 async function cacheTexts(): Promise<void> {
@@ -329,7 +350,7 @@ const server = createServer(async (request, response) => {
     if (job.polls >= 2 && !job.record) job.record = await recordedReview(sample);
     jobs.set(sample.id, job);
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(job.record ? reviewView(job.record, sample) : `<div class="progress"><span></span><p>Reader: clasificando fragmentos con gramática y sin herramientas…</p></div>`);
+    response.end(job.record ? reviewView(job.record, sample) : `<div class="progress"><span></span><p>Reader local: clasificando fragmentos con gramática y sin herramientas…</p></div>`);
     return;
   }
   if (url.pathname.startsWith('/documents/') || url.pathname.startsWith('/jobs/attacks/')) {
@@ -346,7 +367,7 @@ const server = createServer(async (request, response) => {
   }
   const step = url.searchParams.get('step') ?? 'documento';
   response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-  response.end(page(sample, step, step === 'duelo' && url.searchParams.has('start'), duelRuns(url.searchParams.get('runs'))));
+  response.end(page(sample, step, await containmentProof(), step === 'duelo' && url.searchParams.has('start'), duelRuns(url.searchParams.get('runs'))));
 });
 
 const styles = `

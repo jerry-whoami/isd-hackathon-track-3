@@ -27,7 +27,9 @@ services:
       FARADAY_JOBS_DIR: /work/jobs
     volumes:
       - jobs:/work/jobs
-    command: ["sleep", "infinity"]
+    ports:
+      - "${FARADAY_PORT:-3000}:3000"
+    command: ["node", "--import", "tsx", "src/web.ts"]
 
 volumes:
   jobs:

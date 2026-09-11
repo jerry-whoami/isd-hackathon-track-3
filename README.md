@@ -29,6 +29,8 @@ If the weights are outside the default `../../track-3/models` path, set `FARADAY
 FARADAY_MODELS_DIR=/absolute/path/to/models docker compose up --build
 ```
 
+Open `http://localhost:3000` after both services start.
+
 `FARADAY_MODEL` is the model path inside the inference container.
 It defaults to `/models/Qwen3-8B-Q4_K_M.gguf`.
 Use the 4B alternative, for example, with:
