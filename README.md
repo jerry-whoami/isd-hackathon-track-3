@@ -23,7 +23,7 @@ grep 'Qwen3-[48]B-Q4_K_M.gguf' models.sha256 | sha256sum -c -
 ```
 
 CPU is the default.
-If the weights are outside the default `../../track-3/models` path, set `FARADAY_MODELS_DIR` to their host directory.
+If the weights are outside the default `./models` path, set `FARADAY_MODELS_DIR` to their host directory.
 
 ```sh
 FARADAY_MODELS_DIR=/absolute/path/to/models docker compose up --build

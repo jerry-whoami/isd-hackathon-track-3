@@ -13,7 +13,7 @@ services:
     volumes:
       - jobs:/work/jobs
       - type: bind
-        source: ${FARADAY_MODELS_DIR:-../../track-3/models}
+        source: ${FARADAY_MODELS_DIR:-./models}
         target: /models
         read_only: true
     command: ["node", "--import", "tsx", "src/inference.ts"]
