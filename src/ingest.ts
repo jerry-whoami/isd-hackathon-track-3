@@ -38,6 +38,21 @@ export function paymentClauseWindow(chunk: Chunk): ClauseWindow | undefined {
   };
 }
 
+export function liabilityClauseWindow(chunk: Chunk): ClauseWindow | undefined {
+  const clause = /CL[ÁA]USULA\s+12\.[\s\S]*?(?:contrato\.)/i.exec(chunk.text);
+  if (!clause || clause.index === undefined) return undefined;
+  const start = chunk.start + clause.index;
+  const text = clause[0];
+  const words = Array.from(text.matchAll(/\S+/g), (word) => word[0]);
+  return {
+    start,
+    end: start + text.length,
+    text,
+    words,
+    anchoredText: words.map((word, index) => `⟦${index}⟧${word}`).join(' ')
+  };
+}
+
 export function spanFromWordAnchor(window: ClauseWindow, anchor: { start: number; end: number }): { start: number; end: number } | undefined {
   if (anchor.start > anchor.end || anchor.end >= window.words.length) return undefined;
   const positions = Array.from(window.text.matchAll(/\S+/g));
