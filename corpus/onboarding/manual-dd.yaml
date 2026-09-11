@@ -1,0 +1,84 @@
+# Manual de debida diligencia — Agente Residente
+#
+# Las leyes citadas (Ley 23 de 2015, Ley 129 de 2020) son reales; el manual,
+# la firma y sus políticas internas son inventados.
+#
+# Corpus TRUSTED para el flujo de onboarding de agente residente (Faraday, Track 3).
+# La sección POL-JUR-01 es CONFIDENCIAL: es la lista de riesgo interna de la
+# firma, no un dato de fuente pública.
+
+firm: "Bufete Altamira & Asociados"
+role: "Agente residente / debida diligencia de origen de fondos"
+
+sections:
+  - id: POL-BF-01
+    applies_to: [carta_origen_fondos]
+    topic: DECLARED_BO
+    finding_type: UBO_MISMATCH
+    primitive: threshold
+    params:
+      min_percent: 25
+    severity: HIGH
+    mandatory: true
+    confidential: false
+    source: "Ley 23 de 2015, art. 4 num. 4 (definición de beneficiario final); Ley 129 de 2020, art. 2 num. 3 (remite el criterio a la Ley 23 y su reglamento)"
+    text: >-
+      Se considera beneficiario final a la persona natural que, en última
+      instancia, posea o controle, directa o indirectamente, el veinticinco
+      por ciento (25%) o más de las acciones, participaciones o derechos de
+      voto de la persona jurídica, conforme a la Ley 23 de 2015 (art. 4 num.
+      4) y a la Ley 129 de 2020 (art. 2 num. 3). Todo accionista, directo o
+      indirecto, que alcance o supere ese veinticinco por ciento (25%) debe
+      quedar identificado y declarado como beneficiario final en la carta de
+      origen de fondos. Cuando ninguna persona natural alcance directamente
+      ese umbral, se aplica la prueba residual (control por otros medios o,
+      en su defecto, el cargo administrativo superior) para identificar al
+      beneficiario final.
+
+  - id: POL-BF-02
+    applies_to: [carta_origen_fondos]
+    topic: DECLARED_BO
+    finding_type: null
+    primitive: mandatory_presence
+    params:
+      requires_declaration_of: [beneficial_owner]
+    severity: HIGH
+    mandatory: true
+    confidential: false
+    source: "Manual de debida diligencia, Bufete Altamira & Asociados, política interna de la firma"
+    text: >-
+      Toda carta de origen de fondos debe declarar expresamente, con nombre
+      completo, a la persona natural identificada como beneficiaria final. La
+      ausencia de esta declaración expresa hace que el expediente se enrute a
+      revisión humana.
+
+  - id: POL-JUR-01
+    applies_to: [carta_origen_fondos]
+    topic: JURISDICTIONS
+    finding_type: HIGH_RISK_JURISDICTION
+    primitive: list_membership
+    params:
+      match: alias
+    severity: HIGH
+    mandatory: true
+    confidential: true
+    source: "Manual de debida diligencia, Bufete Altamira & Asociados — política interna de la firma (lista de riesgo confidencial)"
+    text: >-
+      CONFIDENCIAL — uso interno exclusivo de la firma. Ninguna estructura
+      societaria declarada en una carta de origen de fondos podrá incluir, sin
+      medida reforzada de debida diligencia, una sociedad o cuenta domiciliada
+      en una jurisdicción de la siguiente lista de alto riesgo. Toda fila de
+      la tabla Anexo A cuyo país corresponda a esta lista, por nombre o por
+      alias, es de declaración obligatoria y activa revisión reforzada.
+    reason: "política interna de la firma"
+    high_risk_jurisdictions:
+      - jurisdiction: "Islas Vírgenes Británicas"
+        aliases: ["BVI", "Tortola", "Road Town", "Islas Virgenes Britanicas"]
+      - jurisdiction: "Seychelles"
+        aliases: ["Mahé", "Mahe", "Victoria"]
+      - jurisdiction: "Belice"
+        aliases: ["Belize"]
+      - jurisdiction: "Irán"
+        aliases: ["Iran"]
+      - jurisdiction: "Corea del Norte"
+        aliases: ["RPDC", "Corea del Norte"]

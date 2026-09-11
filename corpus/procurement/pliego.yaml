@@ -1,0 +1,64 @@
+# Pliego de cargos — Licitación Pública No. 2026-014-ENT
+#
+# Las leyes citadas (Ley 22 de 2006, Texto Único ordenado por Ley 153 de 2020) son reales;
+# el pliego, la entidad y el objeto del contrato son inventados.
+#
+# Corpus TRUSTED para el flujo de contratación pública (Faraday, Track 3).
+# Objeto: licitación pública > B/.50 000, precio como factor determinante
+# (Ley 22 de 2006, Texto Único, art. 58).
+
+entity: "Entidad Reguladora de Suministros de Panamá (ERSPA)"
+process: "Licitación Pública No. 2026-014-ENT"
+object: "Suministro e instalación de mobiliario de oficina para las nuevas dependencias regionales de la Entidad"
+procedure_basis: "Ley 22 de 2006 (Texto Único ordenado por la Ley 153 de 2020, G.O. 29107-A), art. 56 (licitación pública, > B/.50 000) y art. 58 (precio como factor determinante)"
+
+sections:
+  - id: PLG-4.1
+    applies_to: [propuesta]
+    topic: PAYMENT_TERMS
+    finding_type: PAYMENT_TERMS_CONFLICT
+    primitive: threshold
+    params:
+      max_days: 30
+    severity: HIGH
+    mandatory: true
+    confidential: false
+    source: "Pliego de cargos, Licitación Pública No. 2026-014-ENT, sección 4.1 (cláusula de forma de pago del contratante)"
+    text: >-
+      La Entidad pagará dentro de los treinta (30) días calendario siguientes a
+      la presentación de la factura.
+
+  - id: PLG-4.2
+    applies_to: [propuesta]
+    topic: LIABILITY
+    finding_type: LIABILITY_CAP_BELOW_POLICY
+    primitive: threshold
+    params:
+      min_cap_percent: 100
+    severity: HIGH
+    mandatory: true
+    confidential: false
+    source: "Pliego de cargos, Licitación Pública No. 2026-014-ENT, sección 4.2 (cláusula de responsabilidad del contratista)"
+    text: >-
+      La responsabilidad del contratista no podrá limitarse por debajo del
+      cien por ciento (100%) del valor del contrato.
+
+  - id: PLG-6
+    applies_to: [propuesta]
+    topic: PAYMENT_TERMS
+    finding_type: null
+    primitive: mandatory_presence
+    params:
+      requires_declaration_of: [payment_term_days, liability_cap_percent]
+    severity: HIGH
+    mandatory: true
+    confidential: false
+    source: "Pliego de cargos, Licitación Pública No. 2026-014-ENT, sección 6 (formulario de propuesta)"
+    text: >-
+      Formulario de propuesta: el proponente debe declarar expresamente, en su
+      formulario de propuesta, el plazo de forma de pago que acepta y el
+      porcentaje de responsabilidad (tope de responsabilidad) que ofrece
+      asumir frente al valor del contrato. Esta declaración es la que hace
+      exigibles las secciones 4.1 y 4.2: sin una declaración expresa de
+      plazo de pago y de tope de responsabilidad, la propuesta se considera
+      incompleta y el expediente se enruta a revisión humana.
