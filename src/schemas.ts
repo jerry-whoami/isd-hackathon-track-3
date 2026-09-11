@@ -48,6 +48,17 @@ export const paymentClaimSchema = z.object({
   anchor: anchorSchema.optional()
 }).strict();
 
+export const liabilityCapClaimSchema = z.discriminatedUnion('found', [
+  z.object({
+    found: z.literal(true),
+    cap_percent: z.int().min(0).max(1000),
+    anchor: anchorSchema
+  }).strict(),
+  z.object({
+    found: z.literal(false)
+  }).strict()
+]);
+
 export const plannerToolSchemas = {
   approve_submission: z.object({}).strict(),
   route_to_human: z.object({
@@ -64,6 +75,7 @@ export type PolicySection = z.infer<typeof policySectionSchema>;
 export type PolicyCorpus = z.infer<typeof policyCorpusSchema>;
 export type Topic = z.infer<typeof topicSchema>;
 export type PaymentClaim = z.infer<typeof paymentClaimSchema>;
+export type LiabilityCapClaim = z.infer<typeof liabilityCapClaimSchema>;
 
 export function jsonGrammar(schema: z.ZodType): Record<string, unknown> {
   return z.toJSONSchema(schema, { target: 'draft-7' }) as Record<string, unknown>;
