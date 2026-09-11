@@ -34,7 +34,7 @@ export async function generateAttack(input: {
   const pdfPath = path.join(input.outputDirectory, `${id}.pdf`);
   const textPath = path.join(input.outputDirectory, `${id}.txt`);
   await writeFile(htmlPath, renderAttackDocument(input.documentType, escapedInjection), 'utf8');
-  await execFileAsync('google-chrome-stable', [
+  await execFileAsync(process.env.CHROME_BIN ?? 'google-chrome-stable', [
     '--headless=new',
     '--no-sandbox',
     '--no-pdf-header-footer',
