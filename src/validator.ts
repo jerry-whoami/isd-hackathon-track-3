@@ -1,12 +1,13 @@
 import type { PolicySection } from './schemas.ts';
 
 export type VerificationStatus = 'verified' | 'corrected' | 'unverified' | 'missing';
-export type ValidationPrimitive = 'structural' | 'provenance' | 'threshold' | 'mandatory_presence';
+export type ValidationPrimitive = 'structural' | 'provenance' | 'list_membership' | 'threshold' | 'mandatory_presence';
 
 export const recipeTable: Record<string, ValidationPrimitive[]> = {
   PAYMENT_TERMS_CONFLICT: ['structural', 'provenance', 'threshold', 'mandatory_presence'],
   LIABILITY_CAP_BELOW_POLICY: ['structural', 'provenance', 'threshold', 'mandatory_presence'],
-  UBO_MISMATCH: ['structural', 'provenance', 'threshold', 'mandatory_presence']
+  UBO_MISMATCH: ['structural', 'provenance', 'threshold', 'mandatory_presence'],
+  HIGH_RISK_JURISDICTION: ['structural', 'provenance', 'list_membership', 'mandatory_presence']
 };
 
 export type PaymentValidation = {
@@ -114,6 +115,41 @@ export function validateHoldingClaim(input: {
   return structural && valueIsInRow
     ? { status: 'verified', recipe }
     : { status: 'unverified', failClosedReason: `la participación accionaria de ${input.row.id} no pudo verificarse en su fila`, recipe };
+}
+
+export function validateJurisdictionClaim(input: {
+  policy: PolicySection;
+  row: { id: string; country: string };
+  jurisdiction?: string;
+}): HoldingValidation & { jurisdiction?: string; finding?: { jurisdiction: string } } {
+  const recipe = recipeTable[input.policy.finding_type ?? ''] ?? [];
+  const entries = input.policy.high_risk_jurisdictions;
+  if (!entries) throw new Error(`Policy ${input.policy.id} has no high-risk jurisdictions.`);
+  if (input.jurisdiction === undefined) {
+    return { status: 'missing', failClosedReason: `no se encontró la jurisdicción de ${input.row.id}`, recipe };
+  }
+
+  const match = entries.find((entry) => [entry.jurisdiction, ...entry.aliases].some((alias) => includesAlias(input.row.country, alias)));
+  if (match) {
+    const expectedLabel = `${match.jurisdiction} (${match.aliases.join(', ')})`;
+    return {
+      status: input.jurisdiction === expectedLabel ? 'verified' : 'corrected',
+      jurisdiction: match.jurisdiction,
+      finding: { jurisdiction: match.jurisdiction },
+      recipe
+    };
+  }
+  return {
+    status: input.jurisdiction === 'NO_LISTADA' ? 'verified' : 'corrected',
+    ...(input.jurisdiction === 'NO_LISTADA' ? {} : { jurisdiction: 'NO_LISTADA' }),
+    recipe
+  };
+}
+
+function includesAlias(country: string, alias: string): boolean {
+  const normalizedCountry = country.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
+  const normalizedAlias = alias.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
+  return normalizedCountry.includes(normalizedAlias);
 }
 
 export function validatePaymentClaim(input: {
