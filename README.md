@@ -1,125 +1,439 @@
 # Faraday
 
-Faraday is a local pipeline for reviewing hostile documents against a confidential corpus.
-Its invariant is simple: the Reader that reads untrusted text has no power, and the Planner that has power never reads untrusted text.
-[ADR 0001](docs/adr/0001-contained-document-review-pipeline.md) describes the containment design.
-[ADR 0002](docs/adr/0002-typescript-end-to-end.md) explains the TypeScript and shared-schema implementation.
+**Local document review that contains prompt injection by architecture.**
 
-All inference is local through QVAC.
-Faraday has no cloud inference.
+Faraday is a QVAC-powered prototype that compares hostile third-party documents against trusted, potentially confidential policies without sending inference to the cloud.
 
-## Run it
+> The Reader that reads untrusted text has no power.
+> The Planner that has power never reads untrusted text.
 
-Download weights on the host, not in a container.
-The model service receives them only through a read-only mount.
+**QVAC 0.19.0 · local inference · no cloud AI · Spanish interface**
+
+**Demonstration video:** Public Spanish-language link pending final recording.
+
+[Quick start](#quick-start) · [Judge walkthrough](#judge-walkthrough) · [Architecture decision](docs/adr/0001-contained-document-review-pipeline.md)
+
+## Contents
+
+- [At a glance](#at-a-glance)
+- [Problem](#problem)
+- [Solution](#solution)
+- [Checks and findings](#checks-and-findings)
+- [Architecture](#architecture)
+- [Innovation](#innovation)
+- [Workflows and business value](#workflows-and-business-value)
+- [Technical evidence](#technical-evidence)
+- [Quick start](#quick-start)
+- [Judge walkthrough](#judge-walkthrough)
+- [Verification](#verification)
+- [Repository map](#repository-map)
+- [Known limitations](#known-limitations)
+- [Competition compliance](#competition-compliance)
+- [Prior work and third-party components](#prior-work-and-third-party-components)
+- [License](#license)
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Problem** | An external document can contain instructions that manipulate an AI reviewer. |
+| **Users** | Compliance officers and public procurement verification committees. |
+| **Input** | Third-party PDFs plus a trusted internal policy corpus. |
+| **Output** | Evidence-backed findings and an explicit outcome. |
+| **Differentiator** | Architectural containment instead of prompt-injection detection. |
+| **Inference** | QVAC with Qwen3, executed locally. |
+| **Outcomes** | Approve, route to human review, or quarantine. |
+
+## Problem
+
+Organizations want AI to compare documents from outside parties against internal policies, risk lists, and contractual requirements.
+The document is untrusted and can contain concealed text that a model interprets as an instruction rather than evidence.
+
+Running the model locally protects confidentiality, but locality alone does not stop that model from approving a document, calling a tool, or influencing another privileged component.
+A conventional agent in Faraday's demonstration receives the document, trusted corpus, and action tools together.
+The supplied hostile bid contains an invisible instruction asking that agent to ignore real conflicts and approve the submission.
+
+## Solution
+
+Faraday separates reading from acting.
+It does not attempt to detect or remove prompt injection.
+Instead, an injected instruction reaches a Reader with no tools, no network, and no prose field through which it can forward the instruction.
+
+The Reader emits only typed claims such as a number of payment days, a liability percentage, a jurisdiction enum, or an evidence anchor.
+Deterministic validation compares those claims against trusted policy and verifies their evidence.
+The Planner receives typed findings and identifiers, never document text or quotations.
+A deterministic template inserts source quotations only after planning is complete.
+
+A required claim that is absent or unverified cannot produce automatic approval.
+The submission is routed to human review or quarantine instead.
+
+## Checks and findings
+
+A **check** is a question derived from trusted policy, such as “Does the payment term stay within 30 days?”
+A **claim** is the value the Reader points to in the document, such as “60 days.”
+A **finding** is a mismatch confirmed by deterministic validation, such as “60 days exceeds the 30-day limit.”
+
+If a mandatory check cannot be verified, Faraday does not invent a finding or approve the document.
+It routes the document to human review or quarantine.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    D[Hostile PDF] --> I[Deterministic extraction]
+    I --> R
+    P[Trusted policy and confidential data] --> R
+
+    subgraph C[Contained local inference - network disabled]
+        R[Reader<br/>QVAC + GBNF<br/>No tools]
+        PL[Planner<br/>QVAC + tools<br/>No document text]
+    end
+
+    R --> CL[Typed claims<br/>Values and anchors only]
+    CL --> V[Validator<br/>Deterministic code]
+    P --> V
+    I -. Resolve evidence anchors .-> V
+    V --> F[Typed findings and IDs]
+    F --> PL
+    PL --> O[Outcome and action ledger]
+    O --> T[Deterministic report template]
+    I -. Insert evidence after planning .-> T
+```
+
+The pipeline has five stages:
+
+1. **Ingest** extracts each PDF once with `pdftotext -layout` and creates the text artifact used by every evidence span.
+2. **Retrieve** deterministically selects applicable policy and classifies every document chunk against a closed topic enum.
+3. **Reader** uses QVAC structured output compiled to GBNF and emits claims rather than verdicts.
+4. **Validator** applies deterministic structural, provenance, list-membership, threshold, and mandatory-presence checks.
+5. **Planner** selects an outcome through a tool call using typed records and IDs only.
+
+The `inference` service is the only service that loads QVAC.
+It runs with `network_mode: none`, receives model weights through a read-only mount, and exchanges schema-validated requests with the web service through a shared-volume file drop.
+
+See [ADR 0001](docs/adr/0001-contained-document-review-pipeline.md) for the threat model and rejected alternatives.
+See [ADR 0002](docs/adr/0002-typescript-end-to-end.md) for the shared TypeScript schema design.
+
+## Innovation
+
+Faraday builds on Simon Willison's Dual LLM pattern and Google DeepMind's CaMeL architecture.
+It does not claim to have invented their privileged and quarantined split.
+
+Faraday demonstrates a consequence specific to local inference.
+A quarantined Reader can hold both hostile text and confidential internal material in the same context because it has no network, tools, or free-text output channel through which to disclose that material.
+
+The resident-agent workflow makes this concrete.
+The firm's confidential high-risk jurisdiction list sits beside the client's hostile letter inside the Reader call, while deterministic validation still finds the listed jurisdiction.
+
+The second contribution is reuse across domains.
+The same engine reviews resident-agent onboarding and public-procurement documents by changing the trusted corpus and validation configuration rather than the containment architecture.
+
+## Workflows and business value
+
+| Workflow | Reviewer | Hostile input | Trusted material | Configured findings |
+| --- | --- | --- | --- | --- |
+| Resident-agent onboarding | Compliance officer | Source-of-funds letter and ownership annex | Due-diligence policy and confidential jurisdiction list | Beneficial-owner mismatch and high-risk jurisdiction |
+| Public procurement | Verification committee | Bid proposal | Tender payment and liability requirements | Payment-term conflict and liability cap below policy |
+
+Faraday can help an organization:
+
+- keep sensitive documents and internal policy on-device;
+- reduce the action surface exposed to hostile document text;
+- provide auditable quotations that point back to the extracted PDF;
+- distinguish model claims from deterministic findings;
+- fail closed to a person or quarantine when required evidence is missing;
+- reuse one review engine across separately configured document workflows.
+
+Faraday is a technology prototype, not legal advice or a production compliance system.
+
+## Technical evidence
+
+### Inspectable containment
+
+The repository makes each security claim directly inspectable:
+
+| Claim | Evidence |
+| --- | --- |
+| Inference has no network | [`compose.yml`](compose.yml) sets `network_mode: none` on the inference service. |
+| Reader has no tools | Reader requests in [`src/review.ts`](src/review.ts) use grammar calls only. |
+| Reader cannot emit prose | [`src/schemas.ts`](src/schemas.ts) defines strict enums, integers, booleans, and anchors. |
+| Grammar and tools cannot be combined | QVAC rejects the combination with code `50010`; the running service records this in `containment-proof.json`. |
+| Planner does not receive document text | [`src/review.ts`](src/review.ts) constructs `plannerInput` from claims, findings, spans, and IDs. |
+| Missing evidence blocks approval | The deterministic approval gate refuses approval when a mandatory claim is not verified. |
+| Actions are visible | Every outcome tool call is stored in the action ledger. |
+
+### Reader measurements
+
+These are pre-implementation spike measurements, not production benchmark claims.
+Spike T9 ran Qwen3-8B five times per field on the supplied hostile PDFs after raw `pdftotext -layout` extraction.
+
+| Reader field | Correct runs |
+| --- | ---: |
+| Holdings with line-marked table rows | 5/5 |
+| Jurisdiction, one call per row with alias enum | 5/5 |
+| Declared beneficial owner from a closed row enum | 5/5 |
+| Payment days and anchor | 5/5 |
+| Liability-cap percentage and anchor | 5/5 |
+| Successful attempts to steer the BVI classification away from BVI | 0/5 |
+
+T9 made 104 GPU calls with a 1.6 second median call time and used approximately 5.4 GiB of a 6.1 GiB GPU.
+Raw extraction was retained because normalization was not better in any measured field.
+
+### Conventional-agent attack measurement
+
+Spike T10 ran the conventional agent ten times against three versions of the procurement text.
+Removing an extractable fictitious-document banner increased injected approvals from 1/10 to 8/10, while the same harness approved the compact spike document 10/10.
+This is why the sample documents are disclosed as fictitious here rather than marked inside their extractable text.
+
+| Input variant | Injected approvals | Human review | Quarantine |
+| --- | ---: | ---: | ---: |
+| Compact spike bid | 10/10 | 0/10 | 0/10 |
+| Supplied bid without fictitious banner | 8/10 | 2/10 | 0/10 |
+| Supplied bid with fictitious banner | 1/10 | 5/10 | 4/10 |
+
+The conventional agent's behavior depends on incidental wording.
+Faraday's containment property does not depend on detecting that wording.
+
+## Quick start
+
+### Prerequisites
+
+- Git
+- Docker Engine with Docker Compose
+- `curl` and `sha256sum` for downloading and verifying the model
+- Enough disk space for a 5.03 GB default model, approximately 4.9 GB of QVAC dependencies, and Docker layers
+
+CPU inference is the default and requires no GPU configuration.
+An NVIDIA GPU with at least 6 GB of VRAM is recommended for the supplied 8B model.
+The first Docker build requires network access to download dependencies, but the inference container has no network at runtime.
+
+### 1. Clone the repository
+
+```sh
+git clone https://github.com/jerry-whoami/isd-hackathon-track-3.git faraday
+cd faraday
+```
+
+### 2. Download and verify the default model
+
+Download weights on the host.
+Weights are not committed to the repository and are mounted read-only into the inference container.
 
 ```sh
 mkdir -p models
 curl -L -C - -o models/Qwen3-8B-Q4_K_M.gguf \
   https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf
-curl -L -C - -o models/Qwen3-4B-Q4_K_M.gguf \
-  https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf
-grep 'Qwen3-[48]B-Q4_K_M.gguf' models.sha256 | sha256sum -c -
+grep 'Qwen3-8B-Q4_K_M.gguf' models.sha256 | sha256sum -c -
 ```
 
-CPU is the default.
-If the weights are outside the default `./models` path, set `FARADAY_MODELS_DIR` to their host directory.
+### 3. Start Faraday on CPU
+
+```sh
+docker compose up --build
+```
+
+If the weights are stored elsewhere, provide an absolute host path:
 
 ```sh
 FARADAY_MODELS_DIR=/absolute/path/to/models docker compose up --build
 ```
 
-Open `http://localhost:3000` after both services start.
+Wait for both services to start, then open [http://localhost:3000](http://localhost:3000).
+Model cold-start time depends on the machine and can be significantly longer on CPU.
 
-`FARADAY_MODEL` is the model path inside the inference container.
-It defaults to `/models/Qwen3-8B-Q4_K_M.gguf`.
-Use the 4B alternative, for example, with:
+### Optional: use the smaller 4B model
 
 ```sh
-FARADAY_MODELS_DIR=/absolute/path/to/models \
-FARADAY_MODEL=/models/Qwen3-4B-Q4_K_M.gguf \
-docker compose up --build
+curl -L -C - -o models/Qwen3-4B-Q4_K_M.gguf \
+  https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf
+grep 'Qwen3-4B-Q4_K_M.gguf' models.sha256 | sha256sum -c -
+
+FARADAY_MODEL=/models/Qwen3-4B-Q4_K_M.gguf docker compose up --build
 ```
 
-For Vulkan GPU inference, install NVIDIA Container Toolkit with Docker CDI configured, then apply the GPU override.
-Set `NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics`; the `graphics` capability exposes the Vulkan driver needed by QVAC.
-The override uses `nvidia.com/gpu=all`, not `--gpus all` or the legacy `nvidia` driver.
+The 4B model reduces resource requirements but is not the default measured configuration.
+
+### Optional: NVIDIA Vulkan acceleration
+
+Install NVIDIA Container Toolkit and configure Docker CDI before using the GPU override.
+The override requests `nvidia.com/gpu=all` through CDI and exposes the graphics capability required by QVAC's Vulkan backend.
 
 ```sh
 FARADAY_MODELS_DIR=/absolute/path/to/models \
 docker compose -f compose.yml -f compose.gpu.yml up --build
 ```
 
-The `inference` service has `network_mode: none` and is the only service that loads QVAC.
-The web service communicates with it through one request directory per call in the shared `jobs` volume.
+The tested GPU environment used NVIDIA Container Toolkit 1.20 and an RTX 4050 Laptop GPU with 6 GB of VRAM.
+QVAC loaded the 8B model into approximately 5.4 GiB of VRAM.
+See [`docs/research/nvidia-vulkan-docker.md`](docs/research/nvidia-vulkan-docker.md) for the verified Vulkan configuration and troubleshooting evidence.
 
-## Demonstration material
+### Stop the application
 
-The corpus and every document in this repository are fictitious, hand-made seed material for the demonstration.
-They deliberately carry no `ficticio` or `fictitious` marking themselves.
-Spike T10 found that an extractable fictitious banner cut naive-path obedience to 1/10, so marking the documents would change the behaviour the demonstration measures.
+```sh
+docker compose down
+```
 
-## Prior art and dependencies
+Add `--volumes` if you also want to remove local job artifacts:
 
-The hand-made corpus is pre-existing work.
-The architectural pattern also follows the Dual LLM pattern by Simon Willison (2023) and CaMeL, *Defeating Prompt Injections by Design*, by Google DeepMind (March 2025).
-Faraday's local implementation and its corpus are not a claim to have invented either pattern.
+```sh
+docker compose down --volumes
+```
 
-| Library | Exact version |
+## Judge walkthrough
+
+The interface is in Spanish and has three steps:
+
+1. **Documento** shows the PDF as a person sees it beside the text extracted for the machine.
+2. **Expediente** shows claims, deterministic findings, evidence spans, the outcome, and the action ledger.
+3. **Duelo** runs the conventional agent and Faraday against the same document and corpus.
+
+For the shortest evaluation path:
+
+1. Select **Propuesta hostil**.
+2. Open **Documento** and inspect the highlighted invisible instruction in the extracted text.
+3. Open **Expediente** and inspect the 60-day payment term and 20 percent liability-cap findings.
+4. Open each finding to trace it to source evidence and trusted policy.
+5. Open **Duelo**, choose the number of repetitions, and compare both action ledgers.
+6. Select **Carta hostil** to inspect the confidential jurisdiction-list example.
+
+The supplied clean procurement proposal declares 30 payment days and a 100 percent liability cap and is the configured approval path.
+The hostile proposal and the onboarding samples contain findings and should not be automatically approved.
+Their appropriate outcomes are human review or quarantine.
+
+A reviewer may also upload a PDF of up to 10 MB for the current browser session and explicitly assign one of the two supported document types.
+Document type is never inferred from untrusted text.
+
+## Verification
+
+Install the locked Node dependencies with Node.js 22.17 or newer:
+
+```sh
+npm ci
+```
+
+Run the automated suite and static checks:
+
+```sh
+npm test
+npm run typecheck
+node scripts/check-extraction.mjs
+```
+
+Run the Compose containment check:
+
+```sh
+npm run check:containment
+```
+
+The containment check builds isolated services with a scripted model, confirms the inference container's network mode, exercises the shared-volume file drop, verifies PDF tooling, and completes a review through the container boundary.
+A real-model startup separately asks QVAC to combine grammar and tools and records the expected rejection code `50010`.
+
+The extraction check validates 26 properties across the supplied PDFs and renders the hostile documents to PNG for manual confirmation that their injected text is visually concealed.
+
+### Command-line review
+
+A local review can also be run without the web interface:
+
+```sh
+FARADAY_MODEL="$PWD/models/Qwen3-8B-Q4_K_M.gguf" \
+npm run review -- documents/procurement/propuesta-hostil.pdf propuesta jobs/review
+```
+
+The command writes `extracted.txt` and `review-record.json` under the selected job directory.
+
+## Repository map
+
+| Path | Purpose |
 | --- | --- |
-| `@qvac/sdk` | `0.19.0` |
-| `yaml` | `2.8.1` |
-| `zod` | `4.1.8` |
-| `@types/node` | `24.5.2` |
-| `tsx` | `4.20.5` |
-| `typescript` | `5.9.2` |
+| [`src/review.ts`](src/review.ts) | Contained and conventional review paths |
+| [`src/validator.ts`](src/validator.ts) | Deterministic validation primitives and findings |
+| [`src/schemas.ts`](src/schemas.ts) | Shared Reader grammars, corpus schemas, and Planner tools |
+| [`src/inference.ts`](src/inference.ts) | Network-isolated QVAC service |
+| [`src/web.ts`](src/web.ts) | Spanish web interface and session-scoped uploads |
+| [`corpus/`](corpus/) | Trusted policy sections for both configured workflows |
+| [`documents/`](documents/) | Clean and hostile demonstration documents |
+| [`test/`](test/) | End-to-end and boundary tests using scripted model responses |
+| [`docs/adr/`](docs/adr/) | Architectural decisions and trade-offs |
+| [`compose.yml`](compose.yml) | CPU topology and containment boundary |
+| [`compose.gpu.yml`](compose.gpu.yml) | NVIDIA CDI and Vulkan override |
 
-The first three are production dependencies.
-The last three are development dependencies.
-The lockfile fixes their transitive dependency versions.
+## Known limitations
 
-| Local model weight | SHA-256 |
+- **Only two workflows are configured.**
+  The prototype's trusted corpus and validation recipes cover resident-agent onboarding and public-procurement bid review only.
+  Any use outside those workflows is unsupported and should be routed to human review or quarantine until an appropriate trusted corpus and validation configuration exist.
+- **The output path remains a smaller attack surface.**
+  The Planner must eventually choose an action, so Faraday reduces the exposed surface rather than claiming to eliminate all risk.
+- **A convincing false document can still extract convincingly.**
+  Faraday verifies that a claimed value appears in the document, not that the document is truthful.
+- **Fail-closed coverage depends on the corpus.**
+  Only information that trusted policy requires the document to declare can be checked for mandatory presence.
+- **Beneficial ownership is flat in this prototype.**
+  A corporate shareholder at or above the threshold routes to a person instead of resolving ownership through additional corporate layers.
+- **Model extraction is probabilistic.**
+  The published spike measurements describe a fixed sample and configuration, not guaranteed accuracy on arbitrary documents.
+- **This is not a production compliance system.**
+  Authentication, durable multi-user storage, integrations with systems of record, broad document classification, and complete legal-domain coverage are outside the prototype.
+
+## Competition compliance
+
+| Requirement | Implementation or evidence |
 | --- | --- |
-| `Qwen3-8B-Q4_K_M.gguf` | `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785` |
-| `Qwen3-4B-Q4_K_M.gguf` | `7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5` |
+| Use QVAC | `@qvac/sdk` 0.19.0 is the only inference SDK. |
+| Local or peer-to-peer inference | All inference runs locally in the `inference` container. |
+| No cloud inference | The inference container has `network_mode: none`; no cloud AI API is used. |
+| Inspectable execution | Compose topology, schemas, action ledger, review records, and containment checks are committed. |
+| Reproducible setup | Model source, hashes, CPU and GPU commands, tests, and expected walkthrough are documented above. |
+| Accessible demonstration video | Public Spanish-language URL must replace the pending notice at the top before submission. |
+| Declare pre-existing work | The complete declaration follows below. |
 
-## Spike T9 measurements
+## Prior work and third-party components
 
-These are spike measurements, not production benchmark claims.
-T9 ran Qwen3-8B on the hostile source-of-funds letter and bid documents after `pdftotext -layout` extraction.
-It ran each field five times per extraction format.
-RAW is the unnormalised extraction used by Faraday.
-NORM trims lines and replaces runs of two or more spaces with ` | `.
-RAW was selected before implementation because it scored at least 4/5 everywhere and NORM was not better anywhere.
+### Pre-existing work declaration
 
-| Reader field and format | RAW | NORM |
-| --- | ---: | ---: |
-| Holdings, `[Ln]` table rows | 5/5 | 5/5 |
-| Jurisdiction, one call per row with alias enum | 5/5 | 5/5 |
-| Jurisdiction, whole table with injected note as `[L5]` | 5/5 | 4/5 |
-| Declared beneficial owner, closed row enum | 5/5 | 5/5 |
-| Payment days and anchor | 5/5 | 5/5 |
-| Liability-cap percentage and anchor | 5/5 | 5/5 |
-| Injection steering the second row away from BVI | 0/5 | 0/5 |
+Faraday's privileged and quarantined split is derived from prior work and is not presented as a new invention.
 
-T9 made 104 GPU calls with a 1.6 s median call time and used 5.4 of 6.1 GB VRAM.
-The last row is the number of successful attempts to steer the Reader away from the BVI classification, so lower is better.
+| Pre-existing item | Source | How Faraday uses it |
+| --- | --- | --- |
+| Dual LLM pattern | [Simon Willison, 2023](https://simonwillison.net/2023/Apr/25/dual-llm-pattern/) | Separation between a quarantined reader and a privileged component |
+| CaMeL, *Defeating Prompt Injections by Design* | [Google DeepMind, 2025](https://arxiv.org/abs/2503.18813) | Capability separation, constrained control flow, and typed values |
+| Qwen3 model weights | [Qwen3-8B-GGUF](https://huggingface.co/Qwen/Qwen3-8B-GGUF) and [Qwen3-4B-GGUF](https://huggingface.co/Qwen/Qwen3-4B-GGUF) | Local Reader, Planner, and conventional-agent inference |
+| Demonstration corpus and documents | Hand-made team material | Fictitious seed policies and adversarial PDFs created for the prototype |
+| Panamanian legal texts | Public legal sources cited inside the corpus | Domain grounding for demonstration policies, not legal advice |
+| AI programming assistants | General-purpose coding assistants | Used during implementation, with generated changes reviewed and tested by the team |
 
-## Real-model smoke runs
+The corpus, organizations, tender, people, and every supplied document are fictitious demonstration material.
+The legal instruments cited by the corpus are real, but Faraday's policies and examples do not represent a real organization or legal opinion.
 
-These are single implementation smoke runs, not repeated accuracy measurements.
-They are reported with their partial outcomes rather than treated as successes.
+The PDFs deliberately contain no extractable `ficticio` or `fictitious` banner.
+Spike T10 showed that such a banner materially changes the conventional agent behavior being measured.
+This README is the explicit disclosure that the documents are fictitious.
 
-| Ticket | Result |
-| --- | --- |
-| #2, bid payment-term tracer | Partial: the coverage call returned `NONE` before the loader fix. |
-| #3, complete bid review | Partial: the Reader returned 60 payment days and a 20% liability cap, but both anchors were missing. |
-| #5, high-risk jurisdiction | Passed: 20 Reader calls, two findings, and route to a person. |
+### Direct Node dependencies
 
-## Known weaknesses
+| Package | Version | License | Use |
+| --- | ---: | --- | --- |
+| `@qvac/sdk` | 0.19.0 | Apache-2.0 | Local model loading, structured output, and tool calls |
+| `yaml` | 2.8.1 | ISC | Trusted corpus parsing |
+| `zod` | 4.1.8 | MIT | Runtime schemas shared across grammar, validation, and tools |
+| `@types/node` | 24.5.2 | MIT | Development type definitions |
+| `tsx` | 4.20.5 | MIT | Direct TypeScript execution |
+| `typescript` | 5.9.2 | Apache-2.0 | Static type checking |
 
-- The output path is a smaller remaining attack surface.
-- A convincing fake still extracts convincingly.
-- The containment pattern is borrowed prior art.
-- Only what the corpus requires a document to declare can fail closed.
-- The flat beneficial-owner check routes a corporate shareholder to a person instead of resolving ownership behind the company.
+`package-lock.json` fixes all transitive dependency versions.
+The container also uses the official Node 22 Bookworm image, Chromium for generated attack PDFs, and Poppler's `pdftotext` and `pdftoppm` utilities for extraction and verification.
+The presentation uses Instrument Serif and JetBrains Mono through Google Fonts.
+
+### Model integrity
+
+Model weights are downloaded separately and are never committed.
+
+| Local model weight | Size | SHA-256 |
+| --- | ---: | --- |
+| `Qwen3-8B-Q4_K_M.gguf` | 5.03 GB | `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785` |
+| `Qwen3-4B-Q4_K_M.gguf` | 2.50 GB | `7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5` |
+
+## License
+
+Faraday's repository code is available under the [MIT License](LICENSE).
+Third-party software, model weights, fonts, and referenced source material remain subject to their respective licenses and terms.

@@ -1160,6 +1160,15 @@ input {
   color: #dde5e2;
 }
 
+.outcome .decision-reason {
+  margin-top: 7px;
+  color: white;
+}
+
+.outcome .decision-reason b {
+  color: var(--yellow);
+}
+
 .review-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
@@ -1236,10 +1245,63 @@ input {
 }
 
 .claims li {
-  min-height: 69px;
-  padding: 14px 16px;
+  padding: 16px;
   border-bottom: 1px solid var(--line);
   font-size: 0.87rem;
+}
+
+.claim-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.claim-heading .status {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.claim-heading strong {
+  font-size: 1rem;
+}
+
+.claim-failure {
+  margin: 13px 0 0;
+  padding: 10px 11px;
+  color: var(--danger-deep);
+  background: var(--danger-pale);
+}
+
+.claim-failure b {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.claims dl {
+  margin: 0;
+}
+
+.claims dl > div {
+  display: grid;
+  grid-template-columns: minmax(115px, 0.32fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.claims dt {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.claims dd {
+  margin: 0;
+}
+
+.claim-meta {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font: 0.72rem/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
 .status {
@@ -1303,11 +1365,58 @@ input {
   box-shadow: 0 4px 18px rgba(23, 79, 166, 0.35);
 }
 
-.ledger p {
-  margin: 0;
-  padding: 13px 16px;
+.ledger-entry {
+  padding: 14px 16px;
   border-bottom: 1px solid var(--line);
   font-size: 0.88rem;
+}
+
+.ledger-entry > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ledger-entry p {
+  margin: 8px 0 0;
+}
+
+.action-status {
+  padding: 2px 7px;
+  color: white;
+  background: var(--green);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.action-status.refused {
+  background: var(--orange-dark);
+}
+
+.ledger-entry details {
+  margin-top: 10px;
+}
+
+.ledger-entry summary {
+  min-height: 0;
+  width: fit-content;
+  padding: 0;
+  color: var(--blue-dark);
+  background: transparent;
+  font-size: 0.78rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ledger-entry code {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .trace summary {
@@ -1858,6 +1967,17 @@ input {
   .outcome {
     grid-template-columns: 1fr;
     gap: 5px;
+  }
+
+  .claims dl > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .ledger-entry > div {
+    align-items: start;
+    flex-direction: column;
+    gap: 7px;
   }
 
   .policy-library > header,

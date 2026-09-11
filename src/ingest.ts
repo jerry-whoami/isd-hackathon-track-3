@@ -82,7 +82,7 @@ export function paragraphChunks(extractedText: string): Chunk[] {
 export type ClauseWindow = { start: number; end: number; text: string; words: string[]; anchoredText: string };
 
 export function paymentClauseWindow(chunk: Chunk): ClauseWindow | undefined {
-  const clause = /CL[ÁA]USULA\s+7\.[\s\S]*?(?:factura\.)/i.exec(chunk.text);
+  const clause = /CL[ÁA]USULA\s+7\.[\s\S]*/i.exec(chunk.text);
   if (!clause || clause.index === undefined) return undefined;
   const start = chunk.start + clause.index;
   const text = clause[0];
@@ -97,7 +97,7 @@ export function paymentClauseWindow(chunk: Chunk): ClauseWindow | undefined {
 }
 
 export function liabilityClauseWindow(chunk: Chunk): ClauseWindow | undefined {
-  const clause = /CL[ÁA]USULA\s+12\.[\s\S]*?(?:contrato\.)/i.exec(chunk.text);
+  const clause = /CL[ÁA]USULA\s+12\.[\s\S]*/i.exec(chunk.text);
   if (!clause || clause.index === undefined) return undefined;
   const start = chunk.start + clause.index;
   const text = clause[0];

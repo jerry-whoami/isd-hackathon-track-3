@@ -28,7 +28,7 @@ export type ReviewRecord = {
   readerCalls: { kind: 'coverage' | 'payment' | 'liability' | 'holdings' | 'jurisdiction' | 'declared-beneficial-owner'; input: { policyRefs: string[]; policySections: { id: string; text: string; confidential: boolean }[]; confidentialPolicyRefs: string[]; text: string }; output: unknown }[];
   spans: { id: string; start: number; end: number }[];
   applicablePolicySections: { id: string; text: string; source: string; confidential: boolean }[];
-  claims: { id: string; kind: 'payment' | 'liability' | 'holding' | 'jurisdiction' | 'declared-beneficial-owner'; policyRef: string; mandatoryPolicyRef?: string; found?: boolean; days?: number; capPercent?: number; partyId?: string; percent?: number; jurisdiction?: string; correctedJurisdiction?: string; declared?: string; spanId?: string; verificationStatus: VerificationStatus; recipe: string[] }[];
+  claims: { id: string; kind: 'payment' | 'liability' | 'holding' | 'jurisdiction' | 'declared-beneficial-owner'; policyRef: string; mandatoryPolicyRef?: string; found?: boolean; days?: number; capPercent?: number; partyId?: string; percent?: number; jurisdiction?: string; correctedJurisdiction?: string; declared?: string; spanId?: string; verificationStatus: VerificationStatus; verificationReason?: string; recipe: string[] }[];
   findings: { id: string; type: string; severity: string; policyRef: string; policyText?: string; source?: string; partyId?: string; jurisdiction?: string; spanId: string; values: { actual: number; maximum?: number; minimum?: number } }[];
 
   failClosedReasons: string[];
@@ -108,6 +108,7 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
         ...(days === undefined ? {} : { days }),
         ...(spanId === undefined ? {} : { spanId }),
         verificationStatus: validation.status,
+        ...(validation.failClosedReason === undefined ? {} : { verificationReason: validation.failClosedReason }),
         recipe: validation.recipe
       });
       if (validation.failClosedReason) failClosedReasons.push(validation.failClosedReason);
@@ -117,7 +118,7 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
     }
     if (!receivedClaim) {
       const validation = validatePaymentClaim({ policy: section, extractedText: input.document.extractedText, found: false });
-      claims.push({ id: `claim-${claims.length + 1}`, kind: 'payment', policyRef: section.id, ...(paymentMandatoryPolicyRef === undefined ? {} : { mandatoryPolicyRef: paymentMandatoryPolicyRef }), found: false, verificationStatus: validation.status, recipe: validation.recipe });
+      claims.push({ id: `claim-${claims.length + 1}`, kind: 'payment', policyRef: section.id, ...(paymentMandatoryPolicyRef === undefined ? {} : { mandatoryPolicyRef: paymentMandatoryPolicyRef }), found: false, verificationStatus: validation.status, ...(validation.failClosedReason === undefined ? {} : { verificationReason: validation.failClosedReason }), recipe: validation.recipe });
       if (validation.failClosedReason) failClosedReasons.push(validation.failClosedReason);
     }
   }
@@ -157,6 +158,7 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
         ...(capPercent === undefined ? {} : { capPercent }),
         ...(spanId === undefined ? {} : { spanId }),
         verificationStatus: validation.status,
+        ...(validation.failClosedReason === undefined ? {} : { verificationReason: validation.failClosedReason }),
         recipe: validation.recipe
       });
       if (validation.failClosedReason) failClosedReasons.push(validation.failClosedReason);
@@ -166,7 +168,7 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
     }
     if (!receivedClaim) {
       const validation = validateLiabilityCapClaim({ policy: section, extractedText: input.document.extractedText, found: false });
-      claims.push({ id: `claim-${claims.length + 1}`, kind: 'liability', policyRef: section.id, ...(liabilityMandatoryPolicyRef === undefined ? {} : { mandatoryPolicyRef: liabilityMandatoryPolicyRef }), found: false, verificationStatus: validation.status, recipe: validation.recipe });
+      claims.push({ id: `claim-${claims.length + 1}`, kind: 'liability', policyRef: section.id, ...(liabilityMandatoryPolicyRef === undefined ? {} : { mandatoryPolicyRef: liabilityMandatoryPolicyRef }), found: false, verificationStatus: validation.status, ...(validation.failClosedReason === undefined ? {} : { verificationReason: validation.failClosedReason }), recipe: validation.recipe });
       if (validation.failClosedReason) failClosedReasons.push(validation.failClosedReason);
     }
   }
@@ -195,6 +197,7 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
         ...(percent === undefined ? {} : { percent }),
         spanId,
         verificationStatus: validation.status,
+        ...(validation.failClosedReason === undefined ? {} : { verificationReason: validation.failClosedReason }),
         recipe: validation.recipe
       });
       if (validation.status === 'verified' && percent !== undefined) verifiedHoldings.push({ row, percent, spanId });
@@ -230,6 +233,7 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
         ...(validation.status === 'corrected' && validation.jurisdiction ? { correctedJurisdiction: validation.jurisdiction } : {}),
         spanId,
         verificationStatus: validation.status,
+        ...(validation.failClosedReason === undefined ? {} : { verificationReason: validation.failClosedReason }),
         recipe: validation.recipe
       });
       if (validation.failClosedReason) failClosedReasons.push(validation.failClosedReason);
@@ -279,6 +283,7 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
       declared,
       ...(spanId === undefined ? {} : { spanId }),
       verificationStatus: validation.status,
+      ...(validation.failClosedReason === undefined ? {} : { verificationReason: validation.failClosedReason }),
       recipe: validation.recipe
     });
     if (validation.failClosedReason) failClosedReasons.push(validation.failClosedReason);
@@ -437,7 +442,9 @@ function isValidOutcomeCall(call: ToolCall): call is ToolCall & { name: ReviewRe
 function plannerSummary(text: string, outcome: ReviewRecord['outcome']): string {
   const summary = text.trim();
   if (summary.length > 0 && summary.length <= 240) return summary;
-  return outcome === 'route_to_human' ? 'Expediente enviado a revisión humana.' : 'Expediente procesado.';
+  if (outcome === 'route_to_human') return 'Expediente enviado a revisión humana.';
+  if (outcome === 'quarantine_submission') return 'Expediente puesto en cuarentena.';
+  return 'Expediente aprobado.';
 }
 
 function isOutcomeTool(name: string): name is NaiveReviewRecord['outcome'] {

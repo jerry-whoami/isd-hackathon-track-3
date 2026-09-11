@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { generateAttack, MAX_INJECTION_LENGTH } from './attack-generator.ts';
 
 import { loadCorpus } from './corpus.ts';
-import { paragraphChunks } from './ingest.ts';
+import { liabilityClauseWindow, paragraphChunks, paymentClauseWindow, type ClauseWindow } from './ingest.ts';
 import { FileDropModelAdapter } from './file-drop.ts';
 import { ScriptedModelAdapter, type ModelPort } from './model-port.ts';
 import { runDuel, type DuelRecord } from './duel.ts';
@@ -129,7 +129,7 @@ async function recordedReview(sample: SampleDocument): Promise<ReviewRecord> {
 
 async function recordedDuel(sample: SampleDocument, runs: number, job: DuelJob): Promise<void> {
   const extractedText = await readFile(sampleTextPath(sample), 'utf8');
-  const passing = isPassingSample(sample);
+  const passing = isPassingSample(sample, extractedText);
   const responses = Array.from({ length: runs }, () => [
     ...containedResponses(sample, extractedText),
     { toolCalls: [{
@@ -154,22 +154,45 @@ async function recordedDuel(sample: SampleDocument, runs: number, job: DuelJob):
   }
 }
 
-function isPassingSample(sample: SampleDocument): boolean {
-  return sample.id === 'propuesta-limpia';
+function isPassingSample(sample: SampleDocument, extractedText: string): boolean {
+  if (sample.type !== 'propuesta') return false;
+  const chunks = paragraphChunks(extractedText);
+  const payment = chunks.map(paymentClauseWindow).find((window) => window !== undefined);
+  const liability = chunks.map(liabilityClauseWindow).find((window) => window !== undefined);
+  return claimNumber(payment, /\((\d+)\)\s*días/i)?.value === 30
+    && claimNumber(liability, /\((\d+)%\)/i)?.value === 100;
+}
+
+function claimNumber(window: ClauseWindow | undefined, pattern: RegExp): { value: number; anchor: { start: number; end: number } } | undefined {
+  if (!window) return undefined;
+  const match = pattern.exec(window.text);
+  if (!match?.[1] || match.index === undefined) return undefined;
+  const wordIndex = Array.from(window.text.matchAll(/\S+/g)).findIndex((word) => word.index !== undefined && word.index <= match.index && word.index + word[0].length > match.index);
+  return wordIndex < 0 ? undefined : { value: Number(match[1]), anchor: { start: wordIndex, end: wordIndex } };
 }
 
 function containedResponses(sample: SampleDocument, extractedText: string): unknown[] {
-  const coverage = paragraphChunks(extractedText).map((chunk) => ({
-    topic: sample.type === 'propuesta'
-      ? /CLÁUSULA 7\. FORMA DE PAGO/i.test(chunk.text) ? 'PAYMENT_TERMS' : /CLÁUSULA 12\. RESPONSABILIDAD/i.test(chunk.text) ? 'LIABILITY' : 'NONE'
-      : 'NONE'
-  }));
+  const chunks = paragraphChunks(extractedText);
+  const topics = chunks.map((chunk) => sample.type === 'propuesta'
+    ? /CLÁUSULA 7\. FORMA DE PAGO/i.test(chunk.text) ? 'PAYMENT_TERMS' : /CLÁUSULA 12\. RESPONSABILIDAD/i.test(chunk.text) ? 'LIABILITY' : 'NONE'
+    : 'NONE');
+  const coverage = topics.map((topic) => ({ topic }));
   if (sample.type === 'propuesta') {
-    const passing = isPassingSample(sample);
+    const paymentClaims = chunks.flatMap((chunk, index) => {
+      if (topics[index] !== 'PAYMENT_TERMS') return [];
+      const claim = claimNumber(paymentClauseWindow(chunk), /\((\d+)\)\s*días/i);
+      return [claim ? { found: true, days: claim.value, anchor: claim.anchor } : { found: false }];
+    });
+    const liabilityClaims = chunks.flatMap((chunk, index) => {
+      if (topics[index] !== 'LIABILITY') return [];
+      const claim = claimNumber(liabilityClauseWindow(chunk), /\((\d+)%\)/i);
+      return [claim ? { found: true, cap_percent: claim.value, anchor: claim.anchor } : { found: false }];
+    });
+    const passing = isPassingSample(sample, extractedText);
     return [
       ...coverage,
-      { found: true, days: passing ? 30 : 60, anchor: { start: 15, end: 16 } },
-      { found: true, cap_percent: passing ? 100 : 20, anchor: { start: 11, end: 14 } },
+      ...paymentClaims,
+      ...liabilityClaims,
       passing
         ? { toolCalls: [{ name: 'approve_submission', arguments: {} }] }
         : { toolCalls: [{ name: 'route_to_human', arguments: { finding_ids: ['finding-1', 'finding-2'], reason: 'Plazo y tope requieren revisión humana.' } }] }
@@ -366,12 +389,16 @@ function escapeHtmlText(value: string): string {
 
 function reviewView(record: ReviewRecord, sample: SampleDocument): string {
   const claims = record.claims.filter((claim) => claim.verificationStatus !== 'verified');
+  const reasons = [...new Set([
+    ...record.actionLedger.flatMap((entry) => typeof entry.arguments.reason === 'string' ? [entry.arguments.reason] : []),
+    ...record.failClosedReasons
+  ])];
   return `<section class="expediente-heading"><div><h1>Expediente</h1><p>Revisión registrada para ${escapeHtml(sample.title)}</p></div><a class="button" href="/?doc=${encodeURIComponent(sample.id)}&step=expediente&rerun=1">Volver a correr</a></section>
-<section class="outcome"><strong>${outcomeLabel(record.outcome)}</strong><p>${escapeHtml(record.summary)}</p></section>
+<section class="outcome"><strong>${outcomeLabel(record.outcome)}</strong><div><p>${escapeHtml(record.summary)}</p>${reasons.length ? `<p class="decision-reason"><b>Motivo de la decisión:</b> ${reasons.map(escapeHtml).join('; ')}</p>` : ''}</div></section>
 ${record.applicablePolicySections.length === 0 ? '<p class="empty">No hay una política aplicable a este tipo de documento.</p>' : ''}
-<section class="review-grid"><article><h2>Hallazgos</h2>${record.findings.length ? record.findings.map((finding) => { const policy = record.applicablePolicySections.find((section) => section.id === finding.policyRef); return `<button class="finding" data-span="${finding.spanId}" type="button" aria-controls="evidence-record" aria-pressed="false"><strong>${escapeHtml(finding.type)}</strong><span>${escapeHtml(finding.severity)} · ${escapeHtml(policy?.source ?? finding.policyRef)}</span><q>${escapeHtml(policy?.text ?? '')}</q></button>`; }).join('') : '<p class="empty">No se emitieron hallazgos para las políticas aplicables.</p>'}</article><article><h2>Claims que requieren revisión</h2>${claims.length ? `<ul class="claims">${claims.map((claim) => `<li><span class="status ${claim.verificationStatus}">${statusLabel(claim.verificationStatus)}</span><b>${escapeHtml(claim.id)}</b> · ${escapeHtml(claim.policyRef)}${claim.days === undefined ? '' : ` · ${claim.days} días`}</li>`).join('')}</ul>` : '<p class="empty">No hay claims que requieran revisión.</p>'}</article></section>
+<section class="review-grid"><article><h2>Hallazgos</h2>${record.findings.length ? record.findings.map((finding) => { const policy = record.applicablePolicySections.find((section) => section.id === finding.policyRef); return `<button class="finding" data-span="${finding.spanId}" type="button" aria-controls="evidence-record" aria-pressed="false"><strong>${escapeHtml(finding.type)}</strong><span>${escapeHtml(finding.severity)} · ${escapeHtml(policy?.source ?? finding.policyRef)}</span><q>${escapeHtml(policy?.text ?? '')}</q></button>`; }).join('') : '<p class="empty">No se emitieron hallazgos para las políticas aplicables.</p>'}</article><article><h2>Comprobaciones que requieren atención</h2>${claims.length ? `<ul class="claims">${claims.map((claim) => claimView(claim, record)).join('')}</ul>` : '<p class="empty">Todas las comprobaciones requeridas fueron verificadas.</p>'}</article></section>
 <section class="evidence" id="evidence-record"><h2>Evidencia extraída</h2><p class="evidence-help">${record.findings.length ? 'Seleccione un hallazgo para localizar su evidencia en el documento.' : 'No hay hallazgos que señalar en el documento.'}</p><pre>${renderEvidence(record)}</pre></section>
-<section class="ledger"><h2>Libro de acciones</h2>${record.actionLedger.map((entry) => `<p><b>${escapeHtml(entry.tool)}</b> · ${entry.refused ? 'rechazada por la compuerta de aprobación' : 'ejecutada'} · ${escapeHtml(JSON.stringify(entry.arguments))}</p>`).join('')}</section>
+<section class="ledger"><h2>Libro de acciones</h2>${record.actionLedger.map(actionView).join('')}</section>
 <details class="trace"><summary>Ver rastro</summary><div class="trace-grid"><section><h2>La jaula · Reader</h2>${record.readerCalls.map((call, index) => `<article><h3>${index + 1}. ${escapeHtml(call.kind)}</h3>${call.input.policySections.length ? call.input.policySections.map((policy) => `<p class="policy-input ${policy.confidential ? 'confidential' : ''}">${policy.confidential ? 'CONFIDENCIAL · ' : ''}${escapeHtml(policy.id)}<br>${escapeHtml(policy.text)}</p>`).join('') : '<p>Sin sección de política para esta llamada.</p>'}<pre>${escapeHtml(call.input.text)}</pre><p><b>Claims tipados:</b> <code>${escapeHtml(JSON.stringify(call.output))}</code></p></article>`).join('')}</section><section><div class="planner-record"><h2>Planner</h2><p>Entrada exacta: registros tipados e IDs, sin texto documental.</p><pre>${json(record.plannerInput)}</pre></div></section></div></details>
 ${policyLibraryView(sample)}`;
 }
@@ -399,12 +426,44 @@ function renderEvidence(record: ReviewRecord): string {
   return html + escapeHtml(record.document.extractedText.slice(cursor));
 }
 
+function claimView(claim: ReviewRecord['claims'][number], record: ReviewRecord): string {
+  const policy = record.applicablePolicySections.find((section) => section.id === claim.policyRef);
+  const reason = claim.verificationReason ?? 'La comprobación no pudo verificarse con la evidencia extraída.';
+  return `<li><div class="claim-heading"><span class="status ${claim.verificationStatus}">${statusLabel(claim.verificationStatus)}</span><strong>${escapeHtml(claimLabel(claim))}</strong></div><p class="claim-failure"><b>Qué falló</b>${escapeHtml(reason)}</p><dl><div><dt>Resultado del Reader</dt><dd>${escapeHtml(claimResult(claim))}</dd></div><div><dt>Regla aplicada</dt><dd>${escapeHtml(policy?.text ?? claim.policyRef)}</dd></div></dl><p class="claim-meta">Referencia técnica: ${escapeHtml(claim.id)} · ${escapeHtml(claim.policyRef)}</p></li>`;
+}
+
+function claimLabel(claim: ReviewRecord['claims'][number]): string {
+  const label = ({ payment: 'Plazo de pago', liability: 'Tope de responsabilidad', holding: 'Participación accionaria', jurisdiction: 'Jurisdicción', 'declared-beneficial-owner': 'Beneficiario final declarado' } as const)[claim.kind];
+  return claim.partyId ? `${label} · ${claim.partyId}` : label;
+}
+
+function claimResult(claim: ReviewRecord['claims'][number]): string {
+  if (claim.verificationStatus === 'missing') return 'El Reader no devolvió un valor ni un ancla de evidencia.';
+  if (claim.days !== undefined) return `${claim.days} días`;
+  if (claim.capPercent !== undefined) return `${claim.capPercent} % del valor del contrato`;
+  if (claim.percent !== undefined) return `${claim.percent} % para ${claim.partyId ?? 'la parte'}`;
+  if (claim.correctedJurisdiction) return `${claim.jurisdiction ?? 'Sin valor'}; corregido a ${claim.correctedJurisdiction}`;
+  if (claim.jurisdiction) return claim.jurisdiction;
+  if (claim.declared) return claim.declared;
+  return 'Sin valor verificable.';
+}
+
+function actionView(entry: ReviewRecord['actionLedger'][number]): string {
+  const reason = typeof entry.arguments.reason === 'string' ? entry.arguments.reason : undefined;
+  const findingIds = Array.isArray(entry.arguments.finding_ids) ? entry.arguments.finding_ids.filter((id): id is string => typeof id === 'string') : [];
+  return `<article class="ledger-entry"><div><strong>${actionLabel(entry.tool)}</strong><span class="action-status ${entry.refused ? 'refused' : 'executed'}">${entry.refused ? 'Rechazada' : 'Ejecutada'}</span></div>${reason ? `<p><b>Motivo:</b> ${escapeHtml(reason)}</p>` : ''}${findingIds.length ? `<p><b>Hallazgos relacionados:</b> ${findingIds.map(escapeHtml).join(', ')}</p>` : ''}<details><summary>Ver registro técnico</summary><code>${escapeHtml(entry.tool)} · ${escapeHtml(JSON.stringify(entry.arguments))}</code></details></article>`;
+}
+
 function statusLabel(status: string): string {
-  return ({ verified: 'Verificado en el texto', corrected: 'Corregido', unverified: 'No verificado', missing: 'Faltante' } as Record<string, string>)[status] ?? status;
+  return ({ verified: 'Verificado en el texto', corrected: 'Corregido', unverified: 'No verificado', missing: 'No extraído' } as Record<string, string>)[status] ?? status;
+}
+
+function actionLabel(tool: string): string {
+  return ({ approve_submission: 'Aprobado', route_to_human: 'Enrutado a una persona', quarantine_submission: 'En cuarentena' } as Record<string, string>)[tool] ?? tool;
 }
 
 function outcomeLabel(outcome: ReviewRecord['outcome']): string {
-  return ({ approve_submission: 'Aprobado', route_to_human: 'Enrutado a una persona', quarantine_submission: 'En cuarentena' })[outcome];
+  return actionLabel(outcome);
 }
 
 async function containmentProof(): Promise<string> {

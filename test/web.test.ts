@@ -27,6 +27,15 @@ test('the selected workflow tab highlight stays inside the tab', async () => {
   assert.doesNotMatch(activeHighlight, /bottom:\s*-/);
 });
 
+test('the expediente explains failed checks and action reasons in plain language', async () => {
+  const source = await readFile('src/web.ts', 'utf8');
+  assert.match(source, /Qué falló/);
+  assert.match(source, /Resultado del Reader/);
+  assert.match(source, /Regla aplicada/);
+  assert.match(source, /Motivo de la decisión/);
+  assert.match(source, /Ver registro técnico/);
+});
+
 test('the expediente remains openable and exposes policy documents', async () => {
   const uploadDirectory = await mkdtemp(path.join(tmpdir(), 'faraday-web-'));
   const server = spawn(process.execPath, ['--import', 'tsx', 'src/web.ts'], {
@@ -133,8 +142,8 @@ test('the expediente remains openable and exposes policy documents', async () =>
     const cleanReview = await (await fetch(`${baseUrl}/review?doc=propuesta-limpia`)).text();
     assert.match(cleanReview, /<strong>Aprobado<\/strong>/);
     assert.match(cleanReview, /No se emitieron hallazgos/);
-    assert.match(cleanReview, /Claims que requieren revisión/);
-    assert.match(cleanReview, /No hay claims que requieran revisión/);
+    assert.match(cleanReview, /Comprobaciones que requieren atención/);
+    assert.match(cleanReview, /Todas las comprobaciones requeridas fueron verificadas/);
     const cleanEvidence = cleanReview.match(/<section class="evidence"[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.doesNotMatch(cleanEvidence, /<mark/);
 

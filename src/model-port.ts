@@ -57,16 +57,31 @@ export class ScriptedModelAdapter implements ModelPort {
   }
 }
 
+type QvacModelConfig = {
+  ctx_size: number;
+  tools: boolean;
+  device?: string;
+  gpu_layers?: number;
+};
+
+export function qvacModelConfig(device: string | undefined): QvacModelConfig {
+  return {
+    ctx_size: 8192,
+    tools: true,
+    ...(device ? { device } : {}),
+    ...(device === 'gpu' ? { gpu_layers: 99 } : {})
+  };
+}
+
 export class QvacModelAdapter implements ModelPort {
   private constructor(private readonly sdk: QvacSdk, private readonly modelId: string) {}
 
   static async load(modelPath = process.env.FARADAY_MODEL ?? '/models/Qwen3-8B-Q4_K_M.gguf'): Promise<QvacModelAdapter> {
     const sdk = await import('@qvac/sdk') as unknown as QvacSdk;
-    const device = process.env.FARADAY_DEVICE;
     const modelId = await sdk.loadModel({
       modelSrc: modelPath,
       modelType: 'llamacpp-completion',
-      modelConfig: { ctx_size: 8192, tools: true, ...(device ? { device } : {}) }
+      modelConfig: qvacModelConfig(process.env.FARADAY_DEVICE)
     });
     return new QvacModelAdapter(sdk, modelId);
   }
@@ -134,7 +149,7 @@ type QvacRun = {
 };
 
 type QvacSdk = {
-  loadModel(input: { modelSrc: string; modelType: string; modelConfig: { ctx_size: number; tools: boolean; device?: string } }): Promise<string>;
+  loadModel(input: { modelSrc: string; modelType: string; modelConfig: QvacModelConfig }): Promise<string>;
   unloadModel(input: { modelId: string; clearStorage: boolean }): Promise<void>;
   completion(input: Record<string, unknown>): QvacRun;
 };

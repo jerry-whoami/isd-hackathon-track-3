@@ -170,6 +170,7 @@ test('fails closed when the Reader reports no payment term', async () => {
   });
 
   assert.equal(record.claims[0]?.verificationStatus, 'missing');
+  assert.equal(record.claims[0]?.verificationReason, 'no se encontró el plazo de pago');
   assert.deepEqual(record.failClosedReasons, ['no se encontró el plazo de pago']);
   assert.equal(record.outcome, 'route_to_human');
   assertApprovalRefusedAndRouted(record, [], 'no se encontró el plazo de pago');
