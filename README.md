@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="assets/logo-wordmark.svg" alt="Faraday — contained document review" width="480">
+</p>
+
 # Faraday
 
 **Local document review that contains prompt injection by architecture.**
 
-Faraday is a QVAC-powered prototype that compares hostile third-party documents against trusted, potentially confidential policies without sending inference to the cloud.
+Most organizations still review third-party documents by hand — not because an AI can't read a PDF, but because they don't trust one with the data or the document. Faraday is a QVAC-powered prototype that removes both objections at once: it runs inference locally, so confidential policy never leaves the machine, and it contains what a hostile document can do, so a first-pass review can finally run unattended instead of waiting on a person's queue.
 
 > The Reader that reads untrusted text has no power.
 > The Planner that has power never reads untrusted text.
@@ -20,42 +24,40 @@ Faraday is a QVAC-powered prototype that compares hostile third-party documents 
 - [Solution](#solution)
 - [Checks and findings](#checks-and-findings)
 - [Architecture](#architecture)
-- [Innovation](#innovation)
 - [Workflows and business value](#workflows-and-business-value)
-- [Technical evidence](#technical-evidence)
 - [Quick start](#quick-start)
 - [Judge walkthrough](#judge-walkthrough)
 - [Verification](#verification)
 - [Repository map](#repository-map)
 - [Known limitations](#known-limitations)
 - [Competition compliance](#competition-compliance)
-- [Prior work and third-party components](#prior-work-and-third-party-components)
+- [Further reading](#further-reading)
 - [License](#license)
 
 ## At a glance
 
 | | |
 | --- | --- |
-| **Problem** | An external document can contain instructions that manipulate an AI reviewer. |
+| **Problem** | Privacy and prompt-injection fears keep document review manual instead of automated. |
 | **Users** | Compliance officers and public procurement verification committees. |
 | **Input** | Third-party PDFs plus a trusted internal policy corpus. |
 | **Output** | Evidence-backed findings and an explicit outcome. |
 | **Differentiator** | Architectural containment instead of prompt-injection detection. |
 | **Inference** | QVAC with Qwen3, executed locally. |
 | **Outcomes** | Approve, route to human review, or quarantine. |
+| **Payoff** | A manual review queue becomes an automatable first pass. |
 
 ## Problem
 
-Organizations want AI to compare documents from outside parties against internal policies, risk lists, and contractual requirements.
-The document is untrusted and can contain concealed text that a model interprets as an instruction rather than evidence.
+Screening bids, onboarding paperwork, and third-party submissions against internal policy is exactly the kind of work AI should be able to automate: repetitive, rule-based, and currently done by hand at real cost in time and headcount. Organizations don't automate it, and not because the technology can't read a PDF — because they're afraid to let it.
 
-Running the model locally protects confidentiality, but locality alone does not stop that model from approving a document, calling a tool, or influencing another privileged component.
-A conventional agent in Faraday's demonstration receives the document, trusted corpus, and action tools together.
-The supplied hostile bid contains an invisible instruction asking that agent to ignore real conflicts and approve the submission.
+Two fears block the workflow. Sending confidential internal policy, pricing, or risk lists to a cloud model risks leaking exactly the material the review depends on. And the document under review is untrusted — it can contain concealed text that a model interprets as an instruction rather than evidence, turning the reviewer into an attacker's tool.
+
+Running the model locally answers the first fear but not the second: locality alone does not stop a local model from approving a document, calling a tool, or influencing another privileged component. A conventional agent in Faraday's demonstration receives the document, trusted corpus, and action tools together. The supplied hostile bid contains an invisible instruction asking that agent to ignore real conflicts and approve the submission — the failure mode that keeps this class of workflow manual even once privacy is solved.
 
 ## Solution
 
-Faraday separates reading from acting.
+Faraday separates reading from acting so both fears go away at once, not just the data-residency one.
 It does not attempt to detect or remove prompt injection.
 Instead, an injected instruction reaches a Reader with no tools, no network, and no prose field through which it can forward the instruction.
 
@@ -65,7 +67,7 @@ The Planner receives typed findings and identifiers, never document text or quot
 A deterministic template inserts source quotations only after planning is complete.
 
 A required claim that is absent or unverified cannot produce automatic approval.
-The submission is routed to human review or quarantine instead.
+The submission is routed to human review or quarantine instead — which is what makes it safe to point the pipeline at every incoming document instead of a person's queue: nothing gets waved through on a model's say-so, so there is nothing to lose by running it unattended.
 
 ## Checks and findings
 
@@ -114,21 +116,11 @@ It runs with `network_mode: none`, receives model weights through a read-only mo
 See [ADR 0001](docs/adr/0001-contained-document-review-pipeline.md) for the threat model and rejected alternatives.
 See [ADR 0002](docs/adr/0002-typescript-end-to-end.md) for the shared TypeScript schema design.
 
-## Innovation
-
-Faraday builds on Simon Willison's Dual LLM pattern and Google DeepMind's CaMeL architecture.
-It does not claim to have invented their privileged and quarantined split.
-
-Faraday demonstrates a consequence specific to local inference.
-A quarantined Reader can hold both hostile text and confidential internal material in the same context because it has no network, tools, or free-text output channel through which to disclose that material.
-
-The resident-agent workflow makes this concrete.
-The firm's confidential high-risk jurisdiction list sits beside the client's hostile letter inside the Reader call, while deterministic validation still finds the listed jurisdiction.
-
-The second contribution is reuse across domains.
-The same engine reviews resident-agent onboarding and public-procurement documents by changing the trusted corpus and validation configuration rather than the containment architecture.
+Faraday builds on Simon Willison's Dual LLM pattern and Google DeepMind's CaMeL architecture — it does not claim to invent the privileged/quarantined split. Its contribution is a consequence specific to *local* inference: a quarantined Reader can hold hostile text and confidential material in the same context because it has no network or tools to leak that material, and the same engine reuses across workflows by swapping only the trusted corpus and validation config, not the containment architecture. Full discussion in [`docs/evidence.md`](docs/evidence.md#innovation).
 
 ## Workflows and business value
+
+Both configured workflows below are reviews a compliance officer or committee currently does by opening a PDF and checking it against policy by hand. Faraday's payoff is not a better version of that manual read — it's removing the reason a person had to be the first pass at all, so their time goes to the submissions that actually have a finding.
 
 | Workflow | Reviewer | Hostile input | Trusted material | Configured findings |
 | --- | --- | --- | --- | --- |
@@ -137,62 +129,17 @@ The same engine reviews resident-agent onboarding and public-procurement documen
 
 Faraday can help an organization:
 
+- automate a document-review first pass it previously kept manual out of privacy or injection fear;
 - keep sensitive documents and internal policy on-device;
 - reduce the action surface exposed to hostile document text;
 - provide auditable quotations that point back to the extracted PDF;
 - distinguish model claims from deterministic findings;
-- fail closed to a person or quarantine when required evidence is missing;
-- reuse one review engine across separately configured document workflows.
+- fail closed to a person or quarantine when required evidence is missing, so automating the first pass costs nothing in missed risk;
+- reuse one review engine across separately configured document workflows, so the same investment pays off in more than one process.
 
-Faraday is a technology prototype, not legal advice or a production compliance system.
+Faraday is a technology prototype, not legal advice or a production compliance system. It demonstrates that the first pass can be automated safely — it does not replace the person who acts on a routed or quarantined finding.
 
-## Technical evidence
-
-### Inspectable containment
-
-The repository makes each security claim directly inspectable:
-
-| Claim | Evidence |
-| --- | --- |
-| Inference has no network | [`compose.yml`](compose.yml) sets `network_mode: none` on the inference service. |
-| Reader has no tools | Reader requests in [`src/review.ts`](src/review.ts) use grammar calls only. |
-| Reader cannot emit prose | [`src/schemas.ts`](src/schemas.ts) defines strict enums, integers, booleans, and anchors. |
-| Grammar and tools cannot be combined | QVAC rejects the combination with code `50010`; the running service records this in `containment-proof.json`. |
-| Planner does not receive document text | [`src/review.ts`](src/review.ts) constructs `plannerInput` from claims, findings, spans, and IDs. |
-| Missing evidence blocks approval | The deterministic approval gate refuses approval when a mandatory claim is not verified. |
-| Actions are visible | Every outcome tool call is stored in the action ledger. |
-
-### Reader measurements
-
-These are pre-implementation spike measurements, not production benchmark claims.
-Spike T9 ran Qwen3-8B five times per field on the supplied hostile PDFs after raw `pdftotext -layout` extraction.
-
-| Reader field | Correct runs |
-| --- | ---: |
-| Holdings with line-marked table rows | 5/5 |
-| Jurisdiction, one call per row with alias enum | 5/5 |
-| Declared beneficial owner from a closed row enum | 5/5 |
-| Payment days and anchor | 5/5 |
-| Liability-cap percentage and anchor | 5/5 |
-| Successful attempts to steer the BVI classification away from BVI | 0/5 |
-
-T9 made 104 GPU calls with a 1.6 second median call time and used approximately 5.4 GiB of a 6.1 GiB GPU.
-Raw extraction was retained because normalization was not better in any measured field.
-
-### Conventional-agent attack measurement
-
-Spike T10 ran the conventional agent ten times against three versions of the procurement text.
-Removing an extractable fictitious-document banner increased injected approvals from 1/10 to 8/10, while the same harness approved the compact spike document 10/10.
-This is why the sample documents are disclosed as fictitious here rather than marked inside their extractable text.
-
-| Input variant | Injected approvals | Human review | Quarantine |
-| --- | ---: | ---: | ---: |
-| Compact spike bid | 10/10 | 0/10 | 0/10 |
-| Supplied bid without fictitious banner | 8/10 | 2/10 | 0/10 |
-| Supplied bid with fictitious banner | 1/10 | 5/10 | 4/10 |
-
-The conventional agent's behavior depends on incidental wording.
-Faraday's containment property does not depend on detecting that wording.
+Every security claim above is backed by something inspectable in the repository — compose topology, source code, a scripted containment check — plus spike measurements of the Reader (5/5 correct on every measured field) and the conventional agent (approving a hostile bid in up to 8/10 runs depending on document wording). Full tables in [`docs/evidence.md`](docs/evidence.md).
 
 ## Quick start
 
@@ -409,29 +356,21 @@ The PDFs deliberately contain no extractable `ficticio` or `fictitious` banner.
 Spike T10 showed that such a banner materially changes the conventional agent behavior being measured.
 This README is the explicit disclosure that the documents are fictitious.
 
-### Direct Node dependencies
+Direct Node dependencies (versions, licenses) and the model SHA-256 hashes are listed in [`docs/evidence.md`](docs/evidence.md#direct-node-dependencies) — `package-lock.json` and `models.sha256` are the source of truth.
 
-| Package | Version | License | Use |
-| --- | ---: | --- | --- |
-| `@qvac/sdk` | 0.19.0 | Apache-2.0 | Local model loading, structured output, and tool calls |
-| `yaml` | 2.8.1 | ISC | Trusted corpus parsing |
-| `zod` | 4.1.8 | MIT | Runtime schemas shared across grammar, validation, and tools |
-| `@types/node` | 24.5.2 | MIT | Development type definitions |
-| `tsx` | 4.20.5 | MIT | Direct TypeScript execution |
-| `typescript` | 5.9.2 | Apache-2.0 | Static type checking |
+## Further reading
 
-`package-lock.json` fixes all transitive dependency versions.
-The container also uses the official Node 22 Bookworm image, Chromium for generated attack PDFs, and Poppler's `pdftotext` and `pdftoppm` utilities for extraction and verification.
-The presentation uses Instrument Serif and JetBrains Mono through Google Fonts.
+This README stays short on purpose. Deeper material, one click away:
 
-### Model integrity
-
-Model weights are downloaded separately and are never committed.
-
-| Local model weight | Size | SHA-256 |
-| --- | ---: | --- |
-| `Qwen3-8B-Q4_K_M.gguf` | 5.03 GB | `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785` |
-| `Qwen3-4B-Q4_K_M.gguf` | 2.50 GB | `7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5` |
+| Document | Covers |
+| --- | --- |
+| [`docs/evidence.md`](docs/evidence.md) | Full measurement tables, the inspectable-containment mapping, and the extended innovation discussion |
+| [`docs/adr/0001-contained-document-review-pipeline.md`](docs/adr/0001-contained-document-review-pipeline.md) | Threat model and rejected alternatives |
+| [`docs/adr/0002-typescript-end-to-end.md`](docs/adr/0002-typescript-end-to-end.md) | Shared TypeScript schema design |
+| [`CONTEXT.md`](CONTEXT.md) | Domain glossary — Reader, Validator, Planner, claim, finding, and every other term used above |
+| [`docs/requirements.md`](docs/requirements.md) | Full requirements the prototype was built against |
+| [`docs/research/nvidia-vulkan-docker.md`](docs/research/nvidia-vulkan-docker.md) | Verified NVIDIA/Vulkan Docker configuration and troubleshooting |
+| [`DESIGN.md`](DESIGN.md) | Interface design system |
 
 ## License
 

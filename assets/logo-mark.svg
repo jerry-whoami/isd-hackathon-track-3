@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-labelledby="faraday-mark-title">
+  <title id="faraday-mark-title">Faraday</title>
+  <rect x="0" y="0" width="240" height="240" fill="#101719"/>
+  <rect x="4" y="4" width="232" height="232" fill="none" stroke="#174fa6" stroke-width="2"/>
+
+  <!-- Cage: a Faraday mesh containing the hostile signal -->
+  <g fill="#174fa6">
+    <rect x="78.33" y="16" width="14" height="208"/>
+    <rect x="147.67" y="16" width="14" height="208"/>
+    <rect x="16" y="78.33" width="208" height="14"/>
+    <rect x="16" y="147.67" width="208" height="14"/>
+  </g>
+
+  <!-- Contained signal: cannot cross the mesh -->
+  <rect x="100" y="100" width="40" height="40" fill="#b9431d"/>
+</svg>

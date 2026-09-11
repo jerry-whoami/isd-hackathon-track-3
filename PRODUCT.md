@@ -13,12 +13,14 @@ They choose a supplied document, inspect the extracted evidence and findings, an
 
 ## Product Purpose
 
-Faraday performs a contained local first-pass review of hostile documents against a trusted corpus.
-Success means a reviewer can inspect the evidence, outcome and containment boundary without trusting a model's prose.
+Organizations keep document review manual because they don't trust an AI reviewer with the data or the document — not because the task itself resists automation.
+Faraday performs a contained local first-pass review of hostile documents against a trusted corpus, removing both objections so that first pass can run unattended instead of sitting in a person's queue.
+Success means a reviewer can inspect the evidence, outcome and containment boundary without trusting a model's prose, and trust the pipeline enough to only spend their own time on what it actually flags.
 
 ## Positioning
 
 The Reader can read untrusted text but has no capabilities, while the Planner has capabilities but never reads untrusted document text.
+That architecture, not injection detection, is what makes automating the workflow safe.
 
 ## Operating Context
 

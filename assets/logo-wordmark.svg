@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 200" width="900" height="200" role="img" aria-labelledby="faraday-wordmark-title">
+  <title id="faraday-wordmark-title">Faraday — contained document review</title>
+  <rect x="0" y="0" width="900" height="200" fill="#101719"/>
+
+  <!-- Mark -->
+  <g transform="translate(20 20)">
+    <rect x="0" y="0" width="160" height="160" fill="none" stroke="#174fa6" stroke-width="2"/>
+    <g fill="#174fa6">
+      <rect x="52.22" y="10.67" width="9.33" height="138.67"/>
+      <rect x="98.44" y="10.67" width="9.33" height="138.67"/>
+      <rect x="10.67" y="52.22" width="138.67" height="9.33"/>
+      <rect x="10.67" y="98.44" width="138.67" height="9.33"/>
+    </g>
+    <rect x="66.67" y="66.67" width="26.67" height="26.67" fill="#b9431d"/>
+  </g>
+
+  <!-- Joining rule -->
+  <rect x="204" y="20" width="2" height="160" fill="#9ca5a2"/>
+
+  <!-- Wordmark -->
+  <text x="230" y="122" font-family="Arial Narrow, 'Helvetica Neue Condensed', Arial, sans-serif" font-weight="800" font-size="88" letter-spacing="-2" fill="#f4f2e9">FARADAY</text>
+  <text x="232" y="156" font-family="Arial Narrow, 'Helvetica Neue Condensed', Arial, sans-serif" font-weight="600" font-size="19" letter-spacing="3" fill="#b8c3c2">CONTAINED DOCUMENT REVIEW</text>
+</svg>
