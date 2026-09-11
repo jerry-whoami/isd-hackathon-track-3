@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ModelPort } from './model-port.ts';
-import { review, type NaiveReviewRecord, type ReviewRecord } from './review.ts';
+import { review, type NaiveReviewRecord, type ReviewDocument, type ReviewRecord } from './review.ts';
 import type { DocumentType } from './schemas.ts';
 
 export type Outcome = 'approve_submission' | 'route_to_human' | 'quarantine_submission';
@@ -18,7 +18,7 @@ export type DuelRecord = {
 };
 
 export async function runDuel(input: {
-  document: { id: string; type: DocumentType; extractedText: string };
+  document: ReviewDocument;
   corpus: unknown;
   model: ModelPort;
   runs?: number;

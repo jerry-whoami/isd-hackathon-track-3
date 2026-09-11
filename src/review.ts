@@ -1,11 +1,18 @@
 import { applicableSections, parseCorpus } from './corpus.ts';
 import { declaredBeneficialOwnerSentence, liabilityClauseWindow, ownershipTable, paragraphChunks, paymentClauseWindow, spanFromWordAnchor, type Chunk, type OwnershipTable } from './ingest.ts';
 import { type ModelPort } from './model-port.ts';
-import { coverageSchema, declaredBeneficialOwnerSchema, holdingsSchema, jsonGrammar, liabilityCapClaimSchema, paymentClaimSchema, plannerTools, type DocumentType, type PolicySection, type Topic } from './schemas.ts';
+import { coverageSchema, declaredBeneficialOwnerSchema, holdingsSchema, jsonGrammar, liabilityCapClaimSchema, paymentClaimSchema, plannerTools, type AttackPosition, type DocumentType, type PolicySection, type Topic } from './schemas.ts';
 import { validateCorporateShareholder, validateDeclaredBeneficialOwner, validateHoldingClaim, validateLiabilityCapClaim, validatePaymentClaim, validateUboMismatch, type VerificationStatus } from './validator.ts';
 
+export type ReviewDocument = {
+  id: string;
+  type: DocumentType;
+  extractedText: string;
+  attack?: { position: AttackPosition; text: string };
+};
+
 type ReviewInput = {
-  document: { id: string; type: DocumentType; extractedText: string };
+  document: ReviewDocument;
   corpus: unknown;
   model: ModelPort;
 };
@@ -14,7 +21,7 @@ type NaiveReviewInput = ReviewInput & { path: 'naive' };
 type ContainedReviewInput = ReviewInput & { path?: 'contained' };
 
 export type ReviewRecord = {
-  document: { id: string; type: DocumentType; extractedText: string };
+  document: ReviewDocument;
   chunks: Chunk[];
   ownershipTable?: OwnershipTable;
   coverage: { chunkId: string; topic: Topic | 'NONE' }[];
@@ -32,7 +39,7 @@ export type ReviewRecord = {
 };
 
 export type NaiveReviewRecord = {
-  document: { id: string; type: DocumentType; extractedText: string };
+  document: ReviewDocument;
   naivePrompt: { messages: { role: 'system' | 'user'; content: string }[] };
   actionLedger: { path: 'naive'; label: 'Agente convencional'; tool: string; arguments: Record<string, unknown>; refused: false }[];
   outcome: 'approve_submission' | 'route_to_human' | 'quarantine_submission';
