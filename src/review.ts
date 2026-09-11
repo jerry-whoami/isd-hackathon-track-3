@@ -4,6 +4,15 @@ import { type ModelPort } from './model-port.ts';
 import { coverageSchema, jsonGrammar, paymentClaimSchema, plannerTools, type DocumentType, type PolicySection, type Topic } from './schemas.ts';
 import { validatePaymentClaim, type VerificationStatus } from './validator.ts';
 
+type ReviewInput = {
+  document: { id: string; type: DocumentType; extractedText: string };
+  corpus: unknown;
+  model: ModelPort;
+};
+
+type NaiveReviewInput = ReviewInput & { path: 'naive' };
+type ContainedReviewInput = ReviewInput & { path?: 'contained' };
+
 export type ReviewRecord = {
   document: { id: string; type: DocumentType; extractedText: string };
   chunks: Chunk[];
@@ -19,11 +28,24 @@ export type ReviewRecord = {
   renderedReport: string;
 };
 
-export async function review(input: {
+export type NaiveReviewRecord = {
   document: { id: string; type: DocumentType; extractedText: string };
-  corpus: unknown;
-  model: ModelPort;
-}): Promise<ReviewRecord> {
+  naivePrompt: { messages: { role: 'system' | 'user'; content: string }[] };
+  actionLedger: { path: 'naive'; label: 'Agente convencional'; tool: string; arguments: Record<string, unknown>; refused: false }[];
+  outcome: 'approve_submission' | 'route_to_human' | 'quarantine_submission';
+  summary: string;
+};
+
+const plannerTaskPrompt = 'Eres el Planner de una comisión verificadora. Decide el expediente llamando exactamente una herramienta.';
+
+export function review(input: NaiveReviewInput): Promise<NaiveReviewRecord>;
+export function review(input: ContainedReviewInput): Promise<ReviewRecord>;
+export async function review(input: NaiveReviewInput | ContainedReviewInput): Promise<ReviewRecord | NaiveReviewRecord> {
+  if (input.path === 'naive') return naiveReview(input);
+  return containedReview(input);
+}
+
+async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
   const corpus = parseCorpus(input.corpus);
   const sections = applicableSections(corpus, input.document.type);
   const chunks = paragraphChunks(input.document.extractedText);
@@ -87,7 +109,7 @@ export async function review(input: {
   };
   const plannerResult = await input.model.tools({
     kind: 'Planner',
-    messages: [{ role: 'system', content: 'Eres el Planner de una comisión verificadora. Recibes solo registros tipados, no el documento. Decide el expediente llamando exactamente una herramienta.' }, { role: 'user', content: JSON.stringify(plannerInput) }],
+    messages: [{ role: 'system', content: `${plannerTaskPrompt} Recibes solo registros tipados, no el documento.` }, { role: 'user', content: JSON.stringify(plannerInput) }],
     tools: plannerTools()
   });
   const actionLedger: ReviewRecord['actionLedger'] = [];
@@ -123,6 +145,32 @@ export async function review(input: {
     summary: outcome === 'route_to_human' ? 'Expediente enviado a revisión humana.' : 'Expediente procesado.',
     renderedReport
   };
+}
+
+async function naiveReview(input: ReviewInput): Promise<NaiveReviewRecord> {
+  const corpus = parseCorpus(input.corpus);
+  const sections = applicableSections(corpus, input.document.type);
+  const messages = [
+    { role: 'system' as const, content: plannerTaskPrompt },
+    {
+      role: 'user' as const,
+      content: `Documento UNTRUSTED:\n${input.document.extractedText}\n\nSecciones TRUSTED aplicables:\n${JSON.stringify(sections)}`
+    }
+  ];
+  const result = await input.model.tools({ kind: 'Naive', messages, tools: plannerTools() });
+  const call = result.toolCalls[0];
+  if (result.toolCalls.length !== 1 || !call || !isOutcomeTool(call.name)) throw new Error('Naive path must make exactly one known tool call.');
+  return {
+    document: input.document,
+    naivePrompt: { messages },
+    actionLedger: [{ path: 'naive', label: 'Agente convencional', tool: call.name, arguments: call.arguments, refused: false }],
+    outcome: call.name,
+    summary: call.name === 'route_to_human' ? 'Expediente enviado a revisión humana.' : 'Expediente procesado.'
+  };
+}
+
+function isOutcomeTool(name: string): name is NaiveReviewRecord['outcome'] {
+  return name === 'approve_submission' || name === 'route_to_human' || name === 'quarantine_submission';
 }
 
 async function coveragePass(chunks: Chunk[], topics: Topic[], model: ModelPort): Promise<{ results: Map<string, Topic | 'NONE'>; calls: ReviewRecord['readerCalls'] }> {
