@@ -88,14 +88,15 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
       readerCalls.push({ kind: 'payment', input: readerInput([section], window.anchoredText), output });
 
       const claimId = `claim-${claims.length + 1}`;
-      const span = output.anchor ? spanFromWordAnchor(window, output.anchor) : undefined;
+      const days = output.found ? output.days : undefined;
+      const span = output.found ? spanFromWordAnchor(window, output.anchor) : undefined;
       const spanId = span ? `span-${spans.size + 1}` : undefined;
       if (span && spanId) spans.set(spanId, span);
       const validation = validatePaymentClaim({
         policy: section,
         extractedText: input.document.extractedText,
         found: output.found,
-        ...(output.days === undefined ? {} : { days: output.days }),
+        ...(days === undefined ? {} : { days }),
         ...(span && spanId ? { span: { id: spanId, ...span } } : {})
       });
       claims.push({
@@ -104,7 +105,7 @@ async function containedReview(input: ReviewInput): Promise<ReviewRecord> {
         policyRef: section.id,
         ...(paymentMandatoryPolicyRef === undefined ? {} : { mandatoryPolicyRef: paymentMandatoryPolicyRef }),
         found: output.found,
-        ...(output.days === undefined ? {} : { days: output.days }),
+        ...(days === undefined ? {} : { days }),
         ...(spanId === undefined ? {} : { spanId }),
         verificationStatus: validation.status,
         recipe: validation.recipe

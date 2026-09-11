@@ -43,11 +43,16 @@ export const anchorSchema = z.object({
   end: z.int().nonnegative()
 }).strict();
 
-export const paymentClaimSchema = z.object({
-  found: z.boolean(),
-  days: z.int().min(0).max(365).optional(),
-  anchor: anchorSchema.optional()
-}).strict();
+export const paymentClaimSchema = z.discriminatedUnion('found', [
+  z.object({
+    found: z.literal(true),
+    days: z.int().min(0).max(365),
+    anchor: anchorSchema
+  }).strict(),
+  z.object({
+    found: z.literal(false)
+  }).strict()
+]);
 
 export const liabilityCapClaimSchema = z.discriminatedUnion('found', [
   z.object({

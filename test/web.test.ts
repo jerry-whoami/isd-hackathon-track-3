@@ -63,6 +63,10 @@ test('the expediente remains openable and exposes policy documents', async () =>
     const cleanReview = await (await fetch(`${baseUrl}/review?doc=propuesta-limpia`)).text();
     assert.match(cleanReview, /<strong>Aprobado<\/strong>/);
     assert.match(cleanReview, /No se emitieron hallazgos/);
+    assert.match(cleanReview, /Claims que requieren revisión/);
+    assert.match(cleanReview, /No hay claims que requieran revisión/);
+    const cleanEvidence = cleanReview.match(/<section class="evidence"[\s\S]*?<\/section>/)?.[0] ?? '';
+    assert.doesNotMatch(cleanEvidence, /<mark/);
 
     let cleanDuel = '';
     for (let attempt = 0; attempt < 20 && !cleanDuel.includes('duel-slot complete'); attempt += 1) {

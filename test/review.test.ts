@@ -133,6 +133,25 @@ test('fails closed without a Planner action when a Reader response is malformed'
   assert.equal(model.requests.some((request) => request.kind === 'Planner'), false);
 });
 
+test('rejects a found payment claim without an evidence anchor before Planner', async () => {
+  const model = new ScriptedModelAdapter([
+    { topic: 'PAYMENT_TERMS' },
+    { found: true, days: 30 }
+  ]);
+
+  await assert.rejects(review({
+    document: {
+      id: 'propuesta-sin-ancla',
+      type: 'propuesta',
+      extractedText: 'CLÁUSULA 7. FORMA DE PAGO. La Entidad pagará dentro de treinta (30) días calendario siguientes a la presentación de la factura.'
+    },
+    corpus,
+    model
+  }));
+
+  assert.equal(model.requests.some((request) => request.kind === 'Planner'), false);
+});
+
 test('fails closed when the Reader reports no payment term', async () => {
   const model = new ScriptedModelAdapter([
     { topic: 'PAYMENT_TERMS' },
