@@ -502,16 +502,6 @@ main {
   border-color: var(--blue);
 }
 
-.steps a.active::after {
-  position: absolute;
-  right: 0;
-  bottom: -8px;
-  left: 0;
-  height: 7px;
-  background: var(--blue);
-  content: "";
-}
-
 .pager {
   display: flex;
   justify-content: flex-end;
@@ -1630,11 +1620,6 @@ input {
     flex: 1 0 auto;
     min-height: 54px;
     padding: 0 11px;
-  }
-
-  .steps a.active::after {
-    bottom: -6px;
-    height: 5px;
   }
 
   .pager {

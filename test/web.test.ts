@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const port = 3197;
@@ -17,6 +18,12 @@ async function waitForServer(): Promise<void> {
   }
   throw new Error('Faraday web server did not start.');
 }
+
+test('the selected workflow tab highlight stays inside the tab', async () => {
+  const css = await readFile('src/web.css', 'utf8');
+  const activeHighlight = css.match(/\.steps a\.active::after\s*\{[^}]*\}/s)?.[0] ?? '';
+  assert.doesNotMatch(activeHighlight, /bottom:\s*-/);
+});
 
 test('the expediente remains openable and exposes policy documents', async () => {
   const server = spawn(process.execPath, ['--import', 'tsx', 'src/web.ts'], {
